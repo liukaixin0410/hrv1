@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Users2, Clock3, CheckCircle2 } from "lucide-react";
+import { Plus, Users2, Clock3, CheckCircle2, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { PositionSwitcher } from "./position-switcher";
 import { AddCandidateDialog } from "./add-candidate-dialog";
 import { KanbanBoard } from "./kanban-board";
@@ -18,6 +19,7 @@ interface WorkbenchProps {
 
 export function Workbench({ positions, candidates }: WorkbenchProps) {
   const [positionFilter, setPositionFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [operatorName, setOperatorName] = useOperatorName();
@@ -31,13 +33,24 @@ export function Workbench({ positions, candidates }: WorkbenchProps) {
     return map;
   }, [candidates, positions]);
 
-  const filtered = useMemo(
-    () =>
+  const filtered = useMemo(() => {
+    const byPosition =
       positionFilter === "all"
         ? candidates
-        : candidates.filter((c) => c.position_id === positionFilter),
-    [candidates, positionFilter]
-  );
+        : candidates.filter((c) => c.position_id === positionFilter);
+
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return byPosition;
+
+    return byPosition.filter((c) => {
+      const posTitle = c.position?.title ?? "";
+      return (
+        c.name.toLowerCase().includes(q) ||
+        c.status.toLowerCase().includes(q) ||
+        posTitle.toLowerCase().includes(q)
+      );
+    });
+  }, [candidates, positionFilter, searchQuery]);
 
   // 概览统计
   const stats = useMemo(() => {
@@ -83,9 +96,28 @@ export function Workbench({ positions, candidates }: WorkbenchProps) {
           onChange={setPositionFilter}
           counts={counts}
         />
+        <div className="relative sm:ml-2 sm:w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜姓名 / 状态 / 岗位…"
+            className="pl-9 pr-8"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              aria-label="清除搜索"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
         <Button
           onClick={() => setAddOpen(true)}
-          className="shrink-0 sm:ml-2"
+          className="shrink-0 sm:ml-auto"
         >
           <Plus className="h-4 w-4" />
           录入简历
