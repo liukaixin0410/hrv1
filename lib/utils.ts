@@ -17,17 +17,33 @@ export function toLocalInputValue(iso: string | null): string {
 }
 
 /**
- * 将 datetime-local 原始值（浏览器本地时间，如 2026-10-16T10:00）
- * 格式化为 yyyy/MM/dd HH:mm。不做任何时区转换，
- * 供服务端写日志备注时使用（服务器运行时区可能为 UTC）。
+ * 将 ISO 时间（或任何可解析的时间值）转换为北京时间（Asia/Shanghai）
+ * 的 yyyy/MM/dd HH:mm 文本，供服务端写日志备注使用。
+ * 服务器运行时区可能是 UTC，不能直接用 toLocaleString 默认时区。
  */
-export function formatLocalDateTime(
+export function formatInterviewTimeBeijing(
   value: string | null | undefined
 ): string | null {
   if (!value) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(value);
-  if (!m) return null;
-  return `${m[1]}/${m[2]}/${m[3]} ${m[4]}:${m[5]}`;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai",
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).formatToParts(d);
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+    return `${get("year")}/${get("month")}/${get("day")} ${get("hour")}:${get(
+      "minute"
+    )}`;
+  } catch {
+    return null;
+  }
 }
 
 /** 中文环境的完整时间展示 */
