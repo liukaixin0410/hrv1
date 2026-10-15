@@ -48,6 +48,7 @@ create table if not exists interviews (
   candidate_id    uuid not null references candidates (id) on delete cascade,
   round           int  not null check (round in (1, 2)),
   scheduled_time  timestamptz,
+  interviewer     text,
   feedback        text,
   operator_name   text,
   created_at      timestamptz not null default now(),

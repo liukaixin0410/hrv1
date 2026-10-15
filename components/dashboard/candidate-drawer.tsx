@@ -8,6 +8,7 @@ import {
   ExternalLink,
   FileText,
   History,
+  UserCog,
   UserRound,
 } from "lucide-react";
 import { Sheet } from "@/components/ui/sheet";
@@ -48,6 +49,8 @@ interface CandidateDrawerProps {
   onClose: () => void;
   operatorName: string;
   onOperatorChange: (v: string) => void;
+  /** 历史面试官姓名，用于输入候选 */
+  knownInterviewers?: string[];
 }
 
 export function CandidateDrawer({
@@ -55,6 +58,7 @@ export function CandidateDrawer({
   onClose,
   operatorName,
   onOperatorChange,
+  knownInterviewers = [],
 }: CandidateDrawerProps) {
   const router = useRouter();
   const [busy, setBusy] = useState<CandidateStatus | null>(null);
@@ -65,6 +69,7 @@ export function CandidateDrawer({
     round: 1 | 2;
   } | null>(null);
   const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleInterviewer, setScheduleInterviewer] = useState("");
   const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   const interviewMap = useMemo(() => {
@@ -93,6 +98,10 @@ export function CandidateDrawer({
           ? toLocalInputValue(existing.scheduled_time)
           : defaultScheduleTime()
       );
+      // 默认带出已安排的面试官，否则用当前操作人姓名
+      setScheduleInterviewer(
+        existing?.interviewer ?? operatorName.trim() ?? ""
+      );
       setScheduleError(null);
       setScheduleTarget({ to, round });
     } else {
@@ -109,12 +118,17 @@ export function CandidateDrawer({
       return;
     }
     const iso = new Date(scheduleTime).toISOString();
-    await handleAdvance(scheduleTarget.to, iso);
+    await handleAdvance(scheduleTarget.to, iso, scheduleInterviewer);
     setScheduleTarget(null);
     setScheduleTime("");
+    setScheduleInterviewer("");
   }
 
-  async function handleAdvance(to: CandidateStatus, scheduledTime?: string) {
+  async function handleAdvance(
+    to: CandidateStatus,
+    scheduledTime?: string,
+    interviewer?: string
+  ) {
     if (!candidate) return;
     if (
       (to === "已淘汰" && !window.confirm(`确认淘汰「${candidate.name}」？`)) ||
@@ -128,7 +142,8 @@ export function CandidateDrawer({
       candidate.id,
       to,
       operatorName,
-      scheduledTime ?? null
+      scheduledTime ?? null,
+      interviewer ?? null
     );
     setBusy(null);
     if (!result.ok) {
@@ -304,6 +319,7 @@ export function CandidateDrawer({
                 readOnly={isTerminal}
                 operatorName={operatorName}
                 onOperatorChange={onOperatorChange}
+                knownInterviewers={knownInterviewers}
               />
             )}
 
@@ -315,6 +331,7 @@ export function CandidateDrawer({
                 readOnly={isTerminal}
                 operatorName={operatorName}
                 onOperatorChange={onOperatorChange}
+                knownInterviewers={knownInterviewers}
               />
             )}
 
@@ -357,6 +374,25 @@ export function CandidateDrawer({
             {scheduleError && (
               <p className="mt-1.5 text-xs text-destructive">{scheduleError}</p>
             )}
+          </div>
+          <div>
+            <Label className="mb-1.5">面试官</Label>
+            <div className="relative">
+              <UserCog className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                list="schedule-interviewer-options"
+                value={scheduleInterviewer}
+                onChange={(e) => setScheduleInterviewer(e.target.value)}
+                placeholder="负责本轮面试的人"
+                maxLength={50}
+                className="flex h-10 w-full rounded-xl border border-input bg-white pl-9 pr-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              />
+              <datalist id="schedule-interviewer-options">
+                {knownInterviewers.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button

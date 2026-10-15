@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, MessageSquareText } from "lucide-react";
+import { CalendarClock, MessageSquareText, UserCog } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,6 +19,8 @@ interface InterviewCardProps {
   readOnly: boolean;
   operatorName: string;
   onOperatorChange: (v: string) => void;
+  /** 历史面试官姓名，用于输入候选 */
+  knownInterviewers?: string[];
 }
 
 export function InterviewCard({
@@ -28,9 +30,11 @@ export function InterviewCard({
   readOnly,
   operatorName,
   onOperatorChange,
+  knownInterviewers = [],
 }: InterviewCardProps) {
   const router = useRouter();
   const [scheduled, setScheduled] = useState("");
+  const [interviewer, setInterviewer] = useState("");
   const [feedback, setFeedback] = useState("");
   const [operator, setOperator] = useState(operatorName);
   const [error, setError] = useState<string | null>(null);
@@ -39,12 +43,14 @@ export function InterviewCard({
   // 服务端数据刷新后同步表单
   useEffect(() => {
     setScheduled(toLocalInputValue(interview?.scheduled_time ?? null));
+    setInterviewer(interview?.interviewer ?? "");
     setFeedback(interview?.feedback ?? "");
     setOperator(interview?.operator_name ?? operatorName);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     interview?.id,
     interview?.scheduled_time,
+    interview?.interviewer,
     interview?.feedback,
     interview?.operator_name,
   ]);
@@ -61,6 +67,7 @@ export function InterviewCard({
       candidateId,
       round,
       scheduledTime: iso,
+      interviewer,
       feedback,
       operatorName: operator,
     });
@@ -121,6 +128,29 @@ export function InterviewCard({
               onChange={(e) => setScheduled(e.target.value)}
               className={`h-9 w-full rounded-lg border border-input bg-white pl-9 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 ${accentMap[accent].ring} disabled:bg-muted/50`}
             />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor={`round-${round}-interviewer`} className="text-xs">
+            面试官
+          </Label>
+          <div className="relative">
+            <UserCog className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              id={`round-${round}-interviewer`}
+              list={`round-${round}-interviewer-options`}
+              value={interviewer}
+              disabled={readOnly}
+              onChange={(e) => setInterviewer(e.target.value)}
+              placeholder="负责本轮面试的人"
+              className="h-9 w-full rounded-lg border border-input bg-white pl-9 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 disabled:bg-muted/50"
+            />
+            <datalist id={`round-${round}-interviewer-options`}>
+              {knownInterviewers.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
           </div>
         </div>
 

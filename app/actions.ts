@@ -247,7 +247,9 @@ export async function advanceStatusAction(
   toStatus: CandidateStatus,
   operatorName: string,
   /** 推进到初试/复试排期时必传的面试时间（ISO） */
-  scheduledTime?: string | null
+  scheduledTime?: string | null,
+  /** 面试官姓名 */
+  interviewer?: string | null
 ): Promise<ActionResult> {
   await requireSession();
 
@@ -301,7 +303,8 @@ export async function advanceStatusAction(
     .eq("id", candidateId);
   if (updateError) return { ok: false, error: updateError.message };
 
-  // 进入初/复试排期时，创建对应面试记录并写入已确认的面试时间
+  // 进入初/复试排期时，创建对应面试记录并写入已确认的面试时间与面试官
+  const interviewerName = (interviewer ?? "").trim().slice(0, 50) || null;
   if (round) {
     const { data: existing } = await sb
       .from("interviews")
@@ -310,18 +313,19 @@ export async function advanceStatusAction(
       .eq("round", round)
       .maybeSingle();
     if (existing) {
-      // 已有记录但缺时间（历史数据兼容），补上时间
-      if (!existing.scheduled_time) {
-        await sb
-          .from("interviews")
-          .update({ scheduled_time: scheduledIso, updated_at: new Date().toISOString() })
-          .eq("id", existing.id);
-      }
+      // 已有记录但缺时间（历史数据兼容），补上时间；面试官以本次排期为准
+      const patch: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (!existing.scheduled_time) patch.scheduled_time = scheduledIso;
+      if (interviewerName) patch.interviewer = interviewerName;
+      await sb.from("interviews").update(patch).eq("id", existing.id);
     } else {
       await sb.from("interviews").insert({
         candidate_id: candidateId,
         round,
         scheduled_time: scheduledIso,
+        interviewer: interviewerName,
       });
     }
   }
@@ -338,6 +342,7 @@ export async function advanceStatusAction(
   const localTimeText = formatInterviewTimeBeijing(scheduledIso);
   if (round && localTimeText) {
     note = `${note ?? "安排面试"} · ${localTimeText}`;
+    if (interviewerName) note += ` · 面试官 ${interviewerName}`;
   }
 
   await writeLog({
@@ -360,6 +365,7 @@ export async function saveInterviewAction(params: {
   candidateId: string;
   round: 1 | 2;
   scheduledTime: string | null;
+  interviewer?: string;
   feedback: string;
   operatorName: string;
 }): Promise<ActionResult> {
@@ -396,6 +402,7 @@ export async function saveInterviewAction(params: {
 
   const payload = {
     scheduled_time: params.scheduledTime,
+    interviewer: (params.interviewer ?? "").trim().slice(0, 50) || null,
     feedback: feedback || null,
     operator_name: operatorName,
     updated_at: new Date().toISOString(),

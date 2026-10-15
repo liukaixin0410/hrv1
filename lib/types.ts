@@ -23,6 +23,8 @@ export interface Interview {
   candidate_id: string;
   round: 1 | 2;
   scheduled_time: string | null;
+  /** 面试官姓名（自由填写，用于日程展示与筛选） */
+  interviewer: string | null;
   feedback: string | null;
   operator_name: string | null;
   created_at: string;

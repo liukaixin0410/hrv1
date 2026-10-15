@@ -97,6 +97,18 @@ export function Workbench({ positions, candidates }: WorkbenchProps) {
 
   const selected = candidates.find((c) => c.id === selectedId) ?? null;
 
+  // 历史面试官姓名（排期弹窗/面试卡片输入候选）
+  const knownInterviewers = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of candidates) {
+      for (const i of c.interviews ?? []) {
+        const name = i.interviewer?.trim();
+        if (name) set.add(name);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+  }, [candidates]);
+
   return (
     <div>
       {/* 双 Tab 切换 */}
@@ -215,6 +227,7 @@ export function Workbench({ positions, candidates }: WorkbenchProps) {
         onClose={() => setSelectedId(null)}
         operatorName={operatorName}
         onOperatorChange={setOperatorName}
+        knownInterviewers={knownInterviewers}
       />
     </div>
   );

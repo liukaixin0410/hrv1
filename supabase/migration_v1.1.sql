@@ -12,3 +12,7 @@ alter table positions
 -- 2. 面试日程按 scheduled_time 排序/查询的索引
 create index if not exists interviews_scheduled_time_idx
   on interviews (scheduled_time);
+
+-- 3. 面试记录增加面试官字段（用于日程表展示与按面试官筛选）
+alter table interviews
+  add column if not exists interviewer text;

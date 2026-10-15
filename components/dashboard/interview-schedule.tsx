@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Filter,
   Inbox,
+  UserCog,
 } from "lucide-react";
 import type { Candidate, Position } from "@/lib/types";
 import { ROUND_LABEL } from "@/lib/constants";
@@ -20,7 +21,12 @@ interface ScheduleItem {
   candidate: Candidate;
   round: 1 | 2;
   time: string; // ISO
+  interviewer: string | null;
 }
+
+/** 面试官筛选值：all=全部，__none__=未分配，其余为姓名 */
+const INTERVIEWER_ALL = "all";
+const INTERVIEWER_NONE = "__none__";
 
 function startOfToday(): Date {
   const d = new Date();
@@ -56,6 +62,20 @@ export function ScheduleView({
   onSelect,
 }: ScheduleViewProps) {
   const [positionId, setPositionId] = useState<string>("all");
+  const [interviewerFilter, setInterviewerFilter] =
+    useState<string>(INTERVIEWER_ALL);
+
+  // 面试官候选：取所有面试记录中出现过的姓名（含历史），按拼音/出现顺序去重
+  const interviewerOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of candidates) {
+      for (const i of c.interviews ?? []) {
+        const name = i.interviewer?.trim();
+        if (name) set.add(name);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+  }, [candidates]);
 
   const items = useMemo<ScheduleItem[]>(() => {
     const cutoff = startOfToday().getTime();
@@ -74,13 +94,20 @@ export function ScheduleView({
             candidate: c,
             round: i.round as 1 | 2,
             time: i.scheduled_time as string,
+            interviewer: i.interviewer?.trim() || null,
           }))
       )
+      .filter((item) => {
+        if (interviewerFilter === INTERVIEWER_ALL) return true;
+        if (interviewerFilter === INTERVIEWER_NONE)
+          return item.interviewer === null;
+        return item.interviewer === interviewerFilter;
+      })
       .sort(
         (a, b) =>
           new Date(a.time).getTime() - new Date(b.time).getTime()
       );
-  }, [candidates, positionId]);
+  }, [candidates, positionId, interviewerFilter]);
 
   // 按天分组（已按时间升序）
   const groups = useMemo(() => {
@@ -108,21 +135,39 @@ export function ScheduleView({
             </span>
           )}
         </p>
-        <div className="relative">
-          <Filter className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <select
-            value={positionId}
-            onChange={(e) => setPositionId(e.target.value)}
-            className="h-9 rounded-lg border border-input bg-white pl-8 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-100"
-          >
-            <option value="all">全部岗位</option>
-            {positions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-                {p.status === "closed" ? "（已停用）" : ""}
-              </option>
-            ))}
-          </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <UserCog className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <select
+              value={interviewerFilter}
+              onChange={(e) => setInterviewerFilter(e.target.value)}
+              className="h-9 rounded-lg border border-input bg-white pl-8 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-100"
+            >
+              <option value={INTERVIEWER_ALL}>全部面试官</option>
+              <option value={INTERVIEWER_NONE}>未分配面试官</option>
+              {interviewerOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="relative">
+            <Filter className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <select
+              value={positionId}
+              onChange={(e) => setPositionId(e.target.value)}
+              className="h-9 rounded-lg border border-input bg-white pl-8 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-100"
+            >
+              <option value="all">全部岗位</option>
+              {positions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                  {p.status === "closed" ? "（已停用）" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -205,6 +250,18 @@ export function ScheduleView({
                           </div>
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">
                             应聘岗位：{item.candidate.position?.title ?? "—"}
+                          </p>
+                          <p className="mt-0.5 flex items-center gap-1 truncate text-xs">
+                            <UserCog className="h-3 w-3 shrink-0 text-slate-400" />
+                            {item.interviewer ? (
+                              <span className="truncate font-medium text-slate-600">
+                                面试官：{item.interviewer}
+                              </span>
+                            ) : (
+                              <span className="truncate text-amber-500">
+                                未分配面试官
+                              </span>
+                            )}
                           </p>
                         </div>
                         <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-emerald-500" />
