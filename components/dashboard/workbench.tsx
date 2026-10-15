@@ -207,14 +207,14 @@ export function Workbench({
             <FilterSelect
               icon={BriefcaseBusiness}
               ariaLabel="按岗位筛选"
-              className="w-full lg:w-48"
+              className="w-full lg:w-64"
               value={positionFilter}
               onChange={setPositionFilter}
               options={[
-                { value: "all", label: `全部岗位 ${counts.all ?? 0}` },
+                { value: "all", label: `全部岗位（候选人数 ${counts.all ?? 0}）` },
                 ...positions.map((p) => ({
                   value: p.id,
-                  label: `${p.title}${p.status === "closed" ? "（已停用）" : ""} ${counts[p.id] ?? 0}`,
+                  label: `${p.title}（候选人数 ${counts[p.id] ?? 0}）${p.status === "closed" ? "（已停用）" : ""}`,
                 })),
               ]}
             />
