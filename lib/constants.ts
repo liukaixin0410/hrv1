@@ -55,6 +55,11 @@ export const ROUND_DOT_CLASS: Record<1 | 2, string> = {
   2: "bg-blue-600",
 };
 
+export const ROUND_CHIP_CLASS: Record<1 | 2, string> = {
+  1: "bg-sky-50 text-sky-600",
+  2: "bg-blue-50 text-blue-600",
+};
+
 /** 允许的状态流转：当前状态 -> 可推进到的状态 */
 export function nextStatus(status: CandidateStatus): {
   to: CandidateStatus;
