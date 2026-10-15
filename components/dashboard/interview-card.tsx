@@ -15,7 +15,7 @@ interface InterviewCardProps {
   candidateId: string;
   round: 1 | 2;
   interview?: Interview;
-  /** 流程已结束（录用/淘汰）时只读 */
+  /** 流程已结束（面试通过/不通过）时只读 */
   readOnly: boolean;
   operatorName: string;
   onOperatorChange: (v: string) => void;

@@ -13,9 +13,9 @@ import type { StatusLog } from "@/lib/types";
 
 function timelineIcon(toStatus: string) {
   switch (toStatus) {
-    case "录用":
+    case "面试通过":
       return <Handshake className="h-3.5 w-3.5 text-emerald-600" />;
-    case "已淘汰":
+    case "面试不通过":
       return <CircleSlash className="h-3.5 w-3.5 text-rose-500" />;
     case "初试完成":
     case "复试完成":

@@ -29,7 +29,7 @@ create table if not exists candidates (
   status       text not null default '待筛',
   created_at   timestamptz not null default now(),
   constraint candidates_status_check check (
-    status in ('待筛', '初试排期', '初试完成', '复试排期', '复试完成', '已淘汰', '录用')
+    status in ('待筛', '初试排期', '初试完成', '复试排期', '复试完成', '面试不通过', '面试通过')
   ),
   constraint candidates_resume_check check (
     resume_url is not null or resume_text is not null

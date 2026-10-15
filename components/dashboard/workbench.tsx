@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Inbox,
   Clock3,
-  CheckCircle2,
+  CircleCheck,
+  CircleSlash,
   Search,
   X,
   CalendarClock,
@@ -43,6 +44,9 @@ export function Workbench({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
+  // 统计卡点击后高亮的看板列
+  const [highlightKey, setHighlightKey] = useState<string | null>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [operatorName, setOperatorName] = useOperatorName();
 
   const counts = useMemo(() => {
@@ -73,16 +77,31 @@ export function Workbench({
     });
   }, [candidates, positionFilter, searchQuery]);
 
-  // 概览统计：待筛 / 面试中 / 已结束（与看板三列口径一致）
+  // 概览统计：待筛 / 面试中 / 面试通过 / 面试不通过（与看板四列口径一致）
   const stats = useMemo(() => {
-    const count = (statuses: readonly string[]) =>
-      filtered.filter((c) => statuses.includes(c.status)).length;
+    const count = (key: string) =>
+      filtered.filter((c) =>
+        BOARD_COLUMNS.find((col) => col.key === key)!.statuses.includes(c.status)
+      ).length;
     return {
-      screening: count(BOARD_COLUMNS[0].statuses),
-      interviewing: count(BOARD_COLUMNS[1].statuses),
-      closed: count(BOARD_COLUMNS[2].statuses),
+      screening: count("screening"),
+      interviewing: count("interviewing"),
+      passed: count("passed"),
+      rejected: count("rejected"),
     };
   }, [filtered]);
+
+  /** 点击统计卡：平滑滚动到对应看板列并短暂高亮 */
+  function jumpToColumn(key: string) {
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    setHighlightKey(key);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`board-column-${key}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    highlightTimer.current = setTimeout(() => setHighlightKey(null), 1800);
+  }
 
   // 今日及以后待进行的面试数（用于日程 Tab 角标）
   const upcomingCount = useMemo(() => {
@@ -124,25 +143,35 @@ export function Workbench({
 
       {tab === "board" ? (
         <>
-          {/* 概览统计卡 */}
-          <div className="mb-5 grid grid-cols-3 gap-3">
+          {/* 概览统计卡（点击定位到对应看板列） */}
+          <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard
               icon={<Inbox className="h-4 w-4" />}
               label="待筛"
               value={stats.screening}
               tone="slate"
+              onClick={() => jumpToColumn("screening")}
             />
             <StatCard
               icon={<Clock3 className="h-4 w-4" />}
               label="面试中"
               value={stats.interviewing}
               tone="blue"
+              onClick={() => jumpToColumn("interviewing")}
             />
             <StatCard
-              icon={<CheckCircle2 className="h-4 w-4" />}
-              label="已结束"
-              value={stats.closed}
+              icon={<CircleCheck className="h-4 w-4" />}
+              label="面试通过"
+              value={stats.passed}
               tone="emerald"
+              onClick={() => jumpToColumn("passed")}
+            />
+            <StatCard
+              icon={<CircleSlash className="h-4 w-4" />}
+              label="面试不通过"
+              value={stats.rejected}
+              tone="rose"
+              onClick={() => jumpToColumn("rejected")}
             />
           </div>
 
@@ -197,10 +226,11 @@ export function Workbench({
             </div>
           </div>
 
-          {/* 核心内容区：三列看板 */}
+          {/* 核心内容区：四列看板 */}
           <KanbanBoard
             candidates={filtered}
             onSelect={(c) => setSelectedId(c.id)}
+            highlightKey={highlightKey}
           />
         </>
       ) : (
@@ -279,31 +309,38 @@ function StatCard({
   label,
   value,
   tone,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   value: number;
-  tone: "slate" | "emerald" | "blue" | "violet";
+  tone: "slate" | "emerald" | "blue" | "rose";
+  onClick: () => void;
 }) {
   const toneMap = {
     slate: "bg-slate-50 text-slate-600 ring-slate-100",
     emerald: "bg-emerald-50 text-emerald-600 ring-emerald-100",
     blue: "bg-blue-50 text-blue-600 ring-blue-100",
-    violet: "bg-violet-50 text-violet-600 ring-violet-100",
+    rose: "bg-rose-50 text-rose-600 ring-rose-100",
   };
   return (
-    <div className="flex items-center gap-3 rounded-2xl border bg-white p-4 card-soft">
+    <button
+      type="button"
+      onClick={onClick}
+      title={`定位到「${label}」`}
+      className="group flex items-center gap-3 rounded-2xl border bg-white p-4 text-left card-soft transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+    >
       <span
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${toneMap[tone]}`}
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 transition group-hover:scale-105 ${toneMap[tone]}`}
       >
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="truncate text-xs text-muted-foreground">{label}</p>
         <p className="text-xl font-bold leading-tight tracking-tight text-foreground">
           {value}
         </p>
       </div>
-    </div>
+    </button>
   );
 }

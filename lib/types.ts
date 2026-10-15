@@ -4,8 +4,8 @@ export const CANDIDATE_STATUSES = [
   "初试完成",
   "复试排期",
   "复试完成",
-  "已淘汰",
-  "录用",
+  "面试不通过",
+  "面试通过",
 ] as const;
 
 export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];

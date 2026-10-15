@@ -314,7 +314,7 @@ export async function createCandidateAction(
 const ALLOWED_ADVANCES: Record<string, CandidateStatus> = {
   待筛: "初试排期",
   初试完成: "复试排期",
-  复试完成: "录用",
+  复试完成: "面试通过",
 };
 
 export async function advanceStatusAction(
@@ -341,11 +341,11 @@ export async function advanceStatusAction(
   const fromStatus = candidate.status as CandidateStatus;
   let target: CandidateStatus;
 
-  if (toStatus === "已淘汰") {
-    if (fromStatus === "已淘汰" || fromStatus === "录用") {
+  if (toStatus === "面试不通过") {
+    if (fromStatus === "面试不通过" || fromStatus === "面试通过") {
       return { ok: false, error: "该候选人流程已结束" };
     }
-    target = "已淘汰";
+    target = "面试不通过";
   } else {
     const allowed = ALLOWED_ADVANCES[fromStatus];
     if (allowed !== toStatus || !CANDIDATE_STATUSES.includes(toStatus)) {
@@ -436,8 +436,8 @@ export async function advanceStatusAction(
   const noteMap: Partial<Record<CandidateStatus, string>> = {
     初试排期: "安排初试",
     复试排期: "安排复试",
-    录用: "确认录用",
-    已淘汰: "淘汰候选人",
+    面试通过: "确认面试通过",
+    面试不通过: "标记为不通过",
   };
 
   let note = noteMap[target] ?? null;

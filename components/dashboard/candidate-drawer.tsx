@@ -130,8 +130,10 @@ export function CandidateDrawer({
   ) {
     if (!candidate) return;
     if (
-      (to === "已淘汰" && !window.confirm(`确认淘汰「${candidate.name}」？`)) ||
-      (to === "录用" && !window.confirm(`确认录用「${candidate.name}」？`))
+      (to === "面试不通过" &&
+        !window.confirm(`确认将「${candidate.name}」标记为面试不通过？`)) ||
+      (to === "面试通过" &&
+        !window.confirm(`确认「${candidate.name}」面试通过？`))
     ) {
       return;
     }
@@ -294,11 +296,11 @@ export function CandidateDrawer({
                   )}
                   <Button
                     variant="outline"
-                    loading={busy === "已淘汰"}
-                    onClick={() => handleAdvance("已淘汰")}
+                    loading={busy === "面试不通过"}
+                    onClick={() => handleAdvance("面试不通过")}
                     className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                   >
-                    淘汰
+                    不通过
                   </Button>
                   <span className="text-xs text-muted-foreground">
                     当前：{candidate.status}
