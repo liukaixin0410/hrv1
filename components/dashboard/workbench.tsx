@@ -341,7 +341,7 @@ function StatCardsRow({
   onCard: (key: keyof StatCounts) => void;
 }) {
   return (
-    <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
       <StatCard
         icon={<Inbox className="h-4 w-4" />}
         label="待筛"
@@ -398,16 +398,16 @@ function StatCard({
       type="button"
       onClick={onClick}
       title={`定位到「${label}」`}
-      className="group flex items-center gap-3 rounded-2xl border bg-white p-4 text-left card-soft transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+      className="group flex items-center gap-2.5 rounded-xl border bg-white px-3 py-2.5 text-left card-soft transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
     >
       <span
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 transition group-hover:scale-105 ${toneMap[tone]}`}
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 transition group-hover:scale-105 ${toneMap[tone]}`}
       >
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="truncate text-xs text-muted-foreground">{label}</p>
-        <p className="text-xl font-bold leading-tight tracking-tight text-foreground">
+        <p className="truncate text-[11px] leading-tight text-muted-foreground">{label}</p>
+        <p className="text-base font-bold leading-tight tracking-tight text-foreground">
           {value}
         </p>
       </div>
