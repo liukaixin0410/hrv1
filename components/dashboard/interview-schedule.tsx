@@ -455,8 +455,13 @@ export function ScheduleView({
                           <span className="shrink-0 font-semibold tabular-nums text-slate-500">
                             {hhmm}
                           </span>
-                          <span className="truncate text-slate-700">
-                            {item.candidate.name}
+                          <span className="flex min-w-0 items-baseline gap-1">
+                            <span className="shrink-0 text-slate-700">
+                              {item.candidate.name}
+                            </span>
+                            <span className="truncate text-slate-400">
+                              {item.candidate.position?.title ?? "未知岗位"}
+                            </span>
                           </span>
                           {!item.interviewer && (
                             <span
