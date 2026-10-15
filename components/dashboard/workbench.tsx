@@ -19,10 +19,14 @@ import { FilterSelect } from "./filter-select";
 import { AddCandidateDialog } from "./add-candidate-dialog";
 import { PositionManageDialog } from "./position-manage-dialog";
 import { KanbanBoard } from "./kanban-board";
-import { ScheduleView } from "./interview-schedule";
 import { CandidateDrawer } from "./candidate-drawer";
 import { useOperatorName } from "./use-operator";
 import { BOARD_COLUMNS } from "@/lib/constants";
+import {
+  INTERVIEWER_ALL,
+  INTERVIEWER_NONE,
+  ScheduleView,
+} from "./interview-schedule";
 import type { Candidate, Interviewer, Position } from "@/lib/types";
 
 interface WorkbenchProps {
@@ -40,6 +44,9 @@ export function Workbench({
 }: WorkbenchProps) {
   const [tab, setTab] = useState<TabKey>("board");
   const [positionFilter, setPositionFilter] = useState<string>("all");
+  // 日程 Tab 的面试官筛选（看板无此维度）
+  const [interviewerFilter, setInterviewerFilter] =
+    useState<string>(INTERVIEWER_ALL);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -77,10 +84,10 @@ export function Workbench({
     });
   }, [candidates, positionFilter, searchQuery]);
 
-  // 概览统计：待筛 / 面试中 / 面试通过 / 面试不通过（与看板四列口径一致）
-  const stats = useMemo(() => {
+  // 按看板四列口径统计任意候选人集合
+  function statsOf(list: Candidate[]) {
     const count = (key: string) =>
-      filtered.filter((c) =>
+      list.filter((c) =>
         BOARD_COLUMNS.find((col) => col.key === key)!.statuses.includes(c.status)
       ).length;
     return {
@@ -89,17 +96,48 @@ export function Workbench({
       passed: count("passed"),
       rejected: count("rejected"),
     };
-  }, [filtered]);
+  }
 
-  /** 点击统计卡：平滑滚动到对应看板列并短暂高亮 */
-  function jumpToColumn(key: string) {
+  const stats = useMemo(() => statsOf(filtered), [filtered]);
+
+  // 日程 Tab 的筛选结果：岗位 + 面试官（候选人级匹配，统计卡跟随此集合）
+  const scheduleFiltered = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    const cutoffT = cutoff.getTime();
+    return candidates.filter((c) => {
+      if (positionFilter !== "all" && c.position_id !== positionFilter)
+        return false;
+      if (interviewerFilter === INTERVIEWER_ALL) return true;
+      if (interviewerFilter === INTERVIEWER_NONE) {
+        // 有“今天及以后待进行”且未分配面试官的面试
+        return (c.interviews ?? []).some((i) => {
+          if (!i.scheduled_time || i.interviewer?.trim()) return false;
+          if (new Date(i.scheduled_time).getTime() < cutoffT) return false;
+          const pending = i.round === 1 ? "初试排期" : "复试排期";
+          return c.status === pending;
+        });
+      }
+      // 指定面试官：该候选人历史任意一轮面试由 TA 负责
+      return (c.interviews ?? []).some(
+        (i) => i.interviewer?.trim() === interviewerFilter
+      );
+    });
+  }, [candidates, positionFilter, interviewerFilter]);
+
+  const scheduleStats = useMemo(() => statsOf(scheduleFiltered), [scheduleFiltered]);
+
+  /** 点击统计卡：（可跨 Tab）平滑滚动到对应看板列并短暂高亮 */
+  function jumpToColumn(key: string, switchTab = false) {
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    if (switchTab) setTab("board");
     setHighlightKey(key);
-    requestAnimationFrame(() => {
+    const scroll = () =>
       document
         .getElementById(`board-column-${key}`)
         ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    if (switchTab) setTimeout(scroll, 80);
+    else requestAnimationFrame(scroll);
     highlightTimer.current = setTimeout(() => setHighlightKey(null), 1800);
   }
 
@@ -144,36 +182,7 @@ export function Workbench({
       {tab === "board" ? (
         <>
           {/* 概览统计卡（点击定位到对应看板列） */}
-          <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard
-              icon={<Inbox className="h-4 w-4" />}
-              label="待筛"
-              value={stats.screening}
-              tone="slate"
-              onClick={() => jumpToColumn("screening")}
-            />
-            <StatCard
-              icon={<Clock3 className="h-4 w-4" />}
-              label="面试中"
-              value={stats.interviewing}
-              tone="blue"
-              onClick={() => jumpToColumn("interviewing")}
-            />
-            <StatCard
-              icon={<CircleCheck className="h-4 w-4" />}
-              label="面试通过"
-              value={stats.passed}
-              tone="emerald"
-              onClick={() => jumpToColumn("passed")}
-            />
-            <StatCard
-              icon={<CircleSlash className="h-4 w-4" />}
-              label="面试不通过"
-              value={stats.rejected}
-              tone="rose"
-              onClick={() => jumpToColumn("rejected")}
-            />
-          </div>
+          <StatCardsRow stats={stats} onCard={(key) => jumpToColumn(key)} />
 
           {/* 顶部操作区 */}
           <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -234,12 +243,24 @@ export function Workbench({
           />
         </>
       ) : (
-        <ScheduleView
-          candidates={candidates}
-          positions={positions}
-          interviewers={interviewers}
-          onSelect={(id) => setSelectedId(id)}
-        />
+        <div className="space-y-5">
+          {/* 统计卡：跟随日程筛选结果；点击切回看板并定位列 */}
+          <StatCardsRow
+            stats={scheduleStats}
+            onCard={(key) => jumpToColumn(key, true)}
+          />
+          <ScheduleView
+            candidates={scheduleFiltered}
+            allCandidates={candidates}
+            positions={positions}
+            interviewers={interviewers}
+            positionFilter={positionFilter}
+            onPositionFilterChange={setPositionFilter}
+            interviewerFilter={interviewerFilter}
+            onInterviewerFilterChange={setInterviewerFilter}
+            onSelect={(id) => setSelectedId(id)}
+          />
+        </div>
       )}
 
       <AddCandidateDialog
@@ -301,6 +322,55 @@ function TabButton({
         </span>
       )}
     </button>
+  );
+}
+
+type StatCounts = {
+  screening: number;
+  interviewing: number;
+  passed: number;
+  rejected: number;
+};
+
+/** 看板与日程两个 Tab 共用的四宫格统计卡 */
+function StatCardsRow({
+  stats,
+  onCard,
+}: {
+  stats: StatCounts;
+  onCard: (key: keyof StatCounts) => void;
+}) {
+  return (
+    <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <StatCard
+        icon={<Inbox className="h-4 w-4" />}
+        label="待筛"
+        value={stats.screening}
+        tone="slate"
+        onClick={() => onCard("screening")}
+      />
+      <StatCard
+        icon={<Clock3 className="h-4 w-4" />}
+        label="面试中"
+        value={stats.interviewing}
+        tone="blue"
+        onClick={() => onCard("interviewing")}
+      />
+      <StatCard
+        icon={<CircleCheck className="h-4 w-4" />}
+        label="面试通过"
+        value={stats.passed}
+        tone="emerald"
+        onClick={() => onCard("passed")}
+      />
+      <StatCard
+        icon={<CircleSlash className="h-4 w-4" />}
+        label="面试不通过"
+        value={stats.rejected}
+        tone="rose"
+        onClick={() => onCard("rejected")}
+      />
+    </div>
   );
 }
 

@@ -24,9 +24,16 @@ import { FilterSelect } from "./filter-select";
 import { InterviewerManageDialog } from "./interviewer-manage-dialog";
 
 interface ScheduleViewProps {
+  /** 已按岗位/面试官筛选后的候选人（日程条目从此派生） */
   candidates: Candidate[];
+  /** 全部候选人（仅用于构建面试官筛选选项，避免被当前岗位筛选收窄） */
+  allCandidates: Candidate[];
   positions: Position[];
   interviewers: Interviewer[];
+  positionFilter: string;
+  onPositionFilterChange: (v: string) => void;
+  interviewerFilter: string;
+  onInterviewerFilterChange: (v: string) => void;
   onSelect: (candidateId: string) => void;
 }
 
@@ -40,8 +47,8 @@ interface ScheduleItem {
 type ViewMode = "list" | "calendar";
 
 /** 面试官筛选值：all=全部，__none__=未分配，其余为姓名 */
-const INTERVIEWER_ALL = "all";
-const INTERVIEWER_NONE = "__none__";
+export const INTERVIEWER_ALL = "all";
+export const INTERVIEWER_NONE = "__none__";
 const VIEW_STORAGE_KEY = "schedule-view";
 
 /** 周一为一周起点 */
@@ -92,13 +99,15 @@ function readInitialView(): ViewMode {
 
 export function ScheduleView({
   candidates,
+  allCandidates,
   positions,
   interviewers,
+  positionFilter,
+  onPositionFilterChange,
+  interviewerFilter,
+  onInterviewerFilterChange,
   onSelect,
 }: ScheduleViewProps) {
-  const [positionId, setPositionId] = useState<string>("all");
-  const [interviewerFilter, setInterviewerFilter] =
-    useState<string>(INTERVIEWER_ALL);
   const [manageOpen, setManageOpen] = useState(false);
   const [viewMode, setViewModeState] = useState<ViewMode>(readInitialView);
   // 日历当前查看的月份
@@ -115,7 +124,7 @@ export function ScheduleView({
   const interviewerOptions = useMemo(() => {
     const set = new Set(interviewers.map((p) => p.name));
     const cutoff = startOfToday().getTime();
-    for (const c of candidates) {
+    for (const c of allCandidates) {
       for (const i of c.interviews ?? []) {
         const pending = i.round === 1 ? "初试排期" : "复试排期";
         if (
@@ -129,14 +138,11 @@ export function ScheduleView({
       }
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
-  }, [interviewers, candidates]);
+  }, [interviewers, allCandidates]);
 
   const items = useMemo<ScheduleItem[]>(() => {
     const cutoff = startOfToday().getTime();
     return candidates
-      .filter(
-        (c) => !positionId || positionId === "all" || c.position_id === positionId
-      )
       .flatMap((c) =>
         (c.interviews ?? [])
           .filter((i) => {
@@ -154,13 +160,14 @@ export function ScheduleView({
           }))
       )
       .filter((item) => {
+        // 条目级精确过滤（候选人级过滤在父组件完成，这里保证多面试官候选人不错显）
         if (interviewerFilter === INTERVIEWER_ALL) return true;
         if (interviewerFilter === INTERVIEWER_NONE)
           return item.interviewer === null;
         return item.interviewer === interviewerFilter;
       })
       .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-  }, [candidates, positionId, interviewerFilter]);
+  }, [candidates, interviewerFilter]);
 
   // 日期 key -> 当日面试（items 已按时间升序）
   const itemsByDay = useMemo(() => {
@@ -246,7 +253,7 @@ export function ScheduleView({
             ariaLabel="按面试官筛选"
             className="w-40"
             value={interviewerFilter}
-            onChange={setInterviewerFilter}
+            onChange={onInterviewerFilterChange}
             options={[
               { value: INTERVIEWER_ALL, label: "全部面试官" },
               { value: INTERVIEWER_NONE, label: "未分配面试官" },
@@ -257,8 +264,8 @@ export function ScheduleView({
             icon={Filter}
             ariaLabel="按岗位筛选"
             className="w-40"
-            value={positionId}
-            onChange={setPositionId}
+            value={positionFilter}
+            onChange={onPositionFilterChange}
             options={[
               { value: "all", label: "全部岗位" },
               ...positions.map((p) => ({
