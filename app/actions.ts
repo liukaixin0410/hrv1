@@ -12,6 +12,7 @@ import {
   verifySessionToken,
 } from "@/lib/auth";
 import { MAX_RESUME_SIZE, ROUND_DONE_STATUS } from "@/lib/constants";
+import { formatLocalDateTime } from "@/lib/utils";
 import { CANDIDATE_STATUSES, type CandidateStatus } from "@/lib/types";
 
 interface ActionResult {
@@ -333,11 +334,10 @@ export async function advanceStatusAction(
   };
 
   let note = noteMap[target] ?? null;
-  if (round && scheduledIso) {
-    const timeStr = new Date(scheduledIso).toLocaleString("zh-CN", {
-      hour12: false,
-    });
-    note = `${note ?? "安排面试"} · ${timeStr}`;
+  // 直接使用浏览器传入的本地时间字符串，避免服务器 UTC 时区导致备注时间偏移
+  const localTimeText = formatLocalDateTime(scheduledTime);
+  if (round && localTimeText) {
+    note = `${note ?? "安排面试"} · ${localTimeText}`;
   }
 
   await writeLog({
@@ -429,11 +429,11 @@ export async function saveInterviewAction(params: {
       candidateId: params.candidateId,
       fromStatus,
       toStatus: doneStatus,
-      note: params.scheduledTime
-        ? `提交${params.round === 1 ? "初试" : "复试"}评价（${new Date(
-            params.scheduledTime
-          ).toLocaleString("zh-CN", { hour12: false })}）`
-        : `提交${params.round === 1 ? "初试" : "复试"}评价`,
+      note: (() => {
+        const base = `提交${params.round === 1 ? "初试" : "复试"}评价`;
+        const localText = formatLocalDateTime(params.scheduledTime);
+        return localText ? `${base}（${localText}）` : base;
+      })(),
       operatorName,
     });
   } else {
