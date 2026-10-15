@@ -2,8 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
-  Plus,
-  Users2,
+  Inbox,
   Clock3,
   CheckCircle2,
   Search,
@@ -11,10 +10,11 @@ import {
   CalendarClock,
   KanbanSquare,
   BriefcaseBusiness,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PositionSwitcher } from "./position-switcher";
+import { FilterSelect } from "./filter-select";
 import { AddCandidateDialog } from "./add-candidate-dialog";
 import { PositionManageDialog } from "./position-manage-dialog";
 import { KanbanBoard } from "./kanban-board";
@@ -73,14 +73,15 @@ export function Workbench({
     });
   }, [candidates, positionFilter, searchQuery]);
 
-  // 概览统计
+  // 概览统计：待筛 / 面试中 / 已结束（与看板三列口径一致）
   const stats = useMemo(() => {
-    const s = { total: filtered.length, interviewing: 0, closed: 0 };
-    for (const c of filtered) {
-      if (BOARD_COLUMNS[1].statuses.includes(c.status)) s.interviewing++;
-      if (BOARD_COLUMNS[2].statuses.includes(c.status)) s.closed++;
-    }
-    return s;
+    const count = (statuses: readonly string[]) =>
+      filtered.filter((c) => statuses.includes(c.status)).length;
+    return {
+      screening: count(BOARD_COLUMNS[0].statuses),
+      interviewing: count(BOARD_COLUMNS[1].statuses),
+      closed: count(BOARD_COLUMNS[2].statuses),
+    };
   }, [filtered]);
 
   // 今日及以后待进行的面试数（用于日程 Tab 角标）
@@ -126,10 +127,10 @@ export function Workbench({
           {/* 概览统计卡 */}
           <div className="mb-5 grid grid-cols-3 gap-3">
             <StatCard
-              icon={<Users2 className="h-4 w-4" />}
-              label="候选人总数"
-              value={stats.total}
-              tone="emerald"
+              icon={<Inbox className="h-4 w-4" />}
+              label="待筛"
+              value={stats.screening}
+              tone="slate"
             />
             <StatCard
               icon={<Clock3 className="h-4 w-4" />}
@@ -141,19 +142,27 @@ export function Workbench({
               icon={<CheckCircle2 className="h-4 w-4" />}
               label="已结束"
               value={stats.closed}
-              tone="violet"
+              tone="emerald"
             />
           </div>
 
           {/* 顶部操作区 */}
           <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
-            <PositionSwitcher
-              positions={positions}
+            <FilterSelect
+              icon={BriefcaseBusiness}
+              ariaLabel="按岗位筛选"
+              className="w-full lg:w-48"
               value={positionFilter}
               onChange={setPositionFilter}
-              counts={counts}
+              options={[
+                { value: "all", label: `全部岗位 ${counts.all ?? 0}` },
+                ...positions.map((p) => ({
+                  value: p.id,
+                  label: `${p.title}${p.status === "closed" ? "（已停用）" : ""} ${counts[p.id] ?? 0}`,
+                })),
+              ]}
             />
-            <div className="relative lg:ml-2 lg:w-64">
+            <div className="relative lg:w-64">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={searchQuery}
@@ -274,9 +283,10 @@ function StatCard({
   icon: React.ReactNode;
   label: string;
   value: number;
-  tone: "emerald" | "blue" | "violet";
+  tone: "slate" | "emerald" | "blue" | "violet";
 }) {
   const toneMap = {
+    slate: "bg-slate-50 text-slate-600 ring-slate-100",
     emerald: "bg-emerald-50 text-emerald-600 ring-emerald-100",
     blue: "bg-blue-50 text-blue-600 ring-blue-100",
     violet: "bg-violet-50 text-violet-600 ring-violet-100",

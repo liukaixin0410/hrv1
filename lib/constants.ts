@@ -27,25 +27,33 @@ export const BOARD_COLUMNS: {
   },
 ];
 
-/** 候选人卡片/详情上的状态徽标配色 */
+/**
+ * 候选人状态徽标配色 —— 全系统唯一来源（卡片、抽屉均消费此函数）
+ * 语义规范：进行中=蓝，成功（录用）=绿，淘汰=红，待筛=中性灰
+ */
 export function statusBadgeClass(status: string): string {
   switch (status) {
     case "待筛":
       return "bg-slate-100 text-slate-600 ring-slate-200";
     case "初试排期":
-    case "复试排期":
-      return "bg-blue-50 text-blue-600 ring-blue-100";
     case "初试完成":
+    case "复试排期":
     case "复试完成":
-      return "bg-violet-50 text-violet-600 ring-violet-100";
+      return "bg-blue-50 text-blue-600 ring-blue-100";
     case "已淘汰":
-      return "bg-rose-50 text-rose-500 ring-rose-100";
+      return "bg-rose-50 text-rose-600 ring-rose-100";
     case "录用":
       return "bg-emerald-50 text-emerald-600 ring-emerald-100";
     default:
       return "bg-slate-100 text-slate-600 ring-slate-200";
   }
 }
+
+/** 面试轮次标签配色（均属“进行中”语义，用同色系深浅区分初/复试） */
+export const ROUND_CHIP_CLASS: Record<1 | 2, string> = {
+  1: "bg-sky-50 text-sky-600",
+  2: "bg-blue-50 text-blue-600",
+};
 
 /** 允许的状态流转：当前状态 -> 可推进到的状态 */
 export function nextStatus(status: CandidateStatus): {

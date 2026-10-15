@@ -10,7 +10,8 @@ import {
   UserCog,
 } from "lucide-react";
 import type { Candidate, Interviewer, Position } from "@/lib/types";
-import { ROUND_LABEL } from "@/lib/constants";
+import { ROUND_CHIP_CLASS, ROUND_LABEL } from "@/lib/constants";
+import { FilterSelect } from "./filter-select";
 import { InterviewerManageDialog } from "./interviewer-manage-dialog";
 
 interface ScheduleViewProps {
@@ -149,46 +150,43 @@ export function ScheduleView({
           )}
         </p>
         <div className="flex flex-wrap items-center gap-2">
+          <FilterSelect
+            icon={UserCog}
+            ariaLabel="按面试官筛选"
+            className="w-40"
+            value={interviewerFilter}
+            onChange={setInterviewerFilter}
+            options={[
+              { value: INTERVIEWER_ALL, label: "全部面试官" },
+              { value: INTERVIEWER_NONE, label: "未分配面试官" },
+              ...interviewerOptions.map((name) => ({
+                value: name,
+                label: name,
+              })),
+            ]}
+          />
+          <FilterSelect
+            icon={Filter}
+            ariaLabel="按岗位筛选"
+            className="w-40"
+            value={positionId}
+            onChange={setPositionId}
+            options={[
+              { value: "all", label: "全部岗位" },
+              ...positions.map((p) => ({
+                value: p.id,
+                label: `${p.title}${p.status === "closed" ? "（已停用）" : ""}`,
+              })),
+            ]}
+          />
           <button
             type="button"
             onClick={() => setManageOpen(true)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-input bg-white px-3 text-sm text-slate-600 shadow-sm transition hover:border-emerald-300 hover:text-emerald-600"
+            className="ml-1 inline-flex h-9 items-center gap-1.5 rounded-lg border border-input bg-white px-3 text-sm text-slate-600 shadow-sm transition hover:border-emerald-300 hover:text-emerald-600"
           >
             <Settings2 className="h-3.5 w-3.5" />
             面试官管理
           </button>
-          <div className="relative">
-            <UserCog className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <select
-              value={interviewerFilter}
-              onChange={(e) => setInterviewerFilter(e.target.value)}
-              className="h-9 rounded-lg border border-input bg-white pl-8 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-100"
-            >
-              <option value={INTERVIEWER_ALL}>全部面试官</option>
-              <option value={INTERVIEWER_NONE}>未分配面试官</option>
-              {interviewerOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="relative">
-            <Filter className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <select
-              value={positionId}
-              onChange={(e) => setPositionId(e.target.value)}
-              className="h-9 rounded-lg border border-input bg-white pl-8 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-100"
-            >
-              <option value="all">全部岗位</option>
-              {positions.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                  {p.status === "closed" ? "（已停用）" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
       </div>
 
@@ -239,7 +237,6 @@ export function ScheduleView({
                     const t = new Date(item.time);
                     const hh = String(t.getHours()).padStart(2, "0");
                     const mm = String(t.getMinutes()).padStart(2, "0");
-                    const isRound2 = item.round === 2;
                     return (
                       <button
                         key={`${item.candidate.id}-${item.round}`}
@@ -260,11 +257,7 @@ export function ScheduleView({
                               {item.candidate.name}
                             </span>
                             <span
-                              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                isRound2
-                                  ? "bg-blue-50 text-blue-600"
-                                  : "bg-emerald-50 text-emerald-600"
-                              }`}
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${ROUND_CHIP_CLASS[item.round]}`}
                             >
                               {ROUND_LABEL[item.round]}
                             </span>

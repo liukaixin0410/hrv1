@@ -80,12 +80,12 @@ export function InterviewCard({
     router.refresh();
   }
 
-  const accent = round === 1 ? "emerald" : "blue";
+  const accent = round === 1 ? "sky" : "blue";
   const accentMap = {
-    emerald: {
-      dot: "bg-emerald-500",
-      chip: "bg-emerald-50 text-emerald-600",
-      ring: "focus-visible:ring-emerald-500/15",
+    sky: {
+      dot: "bg-sky-500",
+      chip: "bg-sky-50 text-sky-600",
+      ring: "focus-visible:ring-sky-500/15",
     },
     blue: {
       dot: "bg-blue-500",
