@@ -341,7 +341,7 @@ function StatCardsRow({
   onCard: (key: keyof StatCounts) => void;
 }) {
   return (
-    <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+    <div className="mb-4 grid grid-cols-4 gap-2.5">
       <StatCard
         icon={<Inbox className="h-4 w-4" />}
         label="待筛"
@@ -398,10 +398,10 @@ function StatCard({
       type="button"
       onClick={onClick}
       title={`定位到「${label}」`}
-      className="group flex items-center gap-2.5 rounded-xl border bg-white px-3 py-2.5 text-left card-soft transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+      className="group flex flex-col items-center justify-center gap-0.5 rounded-xl border bg-white px-1 py-2 text-center card-soft transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 sm:flex-row sm:gap-2.5 sm:px-3 sm:py-2.5 sm:text-left"
     >
       <span
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 transition group-hover:scale-105 ${toneMap[tone]}`}
+        className={`hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 transition group-hover:scale-105 sm:flex ${toneMap[tone]}`}
       >
         {icon}
       </span>
