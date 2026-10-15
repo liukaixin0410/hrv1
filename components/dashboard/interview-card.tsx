@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, MessageSquareText, UserCog } from "lucide-react";
+import { CalendarClock, ChevronDown, MessageSquareText, UserCog } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,8 +19,8 @@ interface InterviewCardProps {
   readOnly: boolean;
   operatorName: string;
   onOperatorChange: (v: string) => void;
-  /** 历史面试官姓名，用于输入候选 */
-  knownInterviewers?: string[];
+  /** 面试官名册姓名 */
+  interviewerNames?: string[];
 }
 
 export function InterviewCard({
@@ -30,7 +30,7 @@ export function InterviewCard({
   readOnly,
   operatorName,
   onOperatorChange,
-  knownInterviewers = [],
+  interviewerNames = [],
 }: InterviewCardProps) {
   const router = useRouter();
   const [scheduled, setScheduled] = useState("");
@@ -137,20 +137,25 @@ export function InterviewCard({
           </Label>
           <div className="relative">
             <UserCog className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
+            <select
               id={`round-${round}-interviewer`}
-              list={`round-${round}-interviewer-options`}
               value={interviewer}
               disabled={readOnly}
               onChange={(e) => setInterviewer(e.target.value)}
-              placeholder="负责本轮面试的人"
-              className="h-9 w-full rounded-lg border border-input bg-white pl-9 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 disabled:bg-muted/50"
-            />
-            <datalist id={`round-${round}-interviewer-options`}>
-              {knownInterviewers.map((name) => (
-                <option key={name} value={name} />
+              className={`h-9 w-full appearance-none rounded-lg border border-input bg-white pl-9 pr-8 text-sm shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 ${accentMap[accent].ring} disabled:bg-muted/50`}
+            >
+              <option value="">未分配面试官</option>
+              {interviewerNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
               ))}
-            </datalist>
+              {/* 历史值已不在名册时原样保留，避免保存评价时被意外覆盖 */}
+              {interviewer && !interviewerNames.includes(interviewer) && (
+                <option value={interviewer}>{interviewer}（已删除）</option>
+              )}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           </div>
         </div>
 

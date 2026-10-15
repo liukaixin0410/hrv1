@@ -5,7 +5,7 @@ import { getSupabase } from "@/lib/supabase";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth";
 import { logoutAction } from "@/app/actions";
 import { Workbench } from "@/components/dashboard/workbench";
-import type { Candidate, Position } from "@/lib/types";
+import type { Candidate, Interviewer, Position } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -17,13 +17,15 @@ export default async function DashboardPage() {
   if (!valid) redirect("/login");
 
   let positions: Position[] = [];
+  let interviewers: Interviewer[] = [];
   let candidates: Candidate[] = [];
   let loadError: string | null = null;
 
   try {
     const sb = getSupabase();
-    const [positionsRes, candidatesRes] = await Promise.all([
+    const [positionsRes, interviewersRes, candidatesRes] = await Promise.all([
       sb.from("positions").select("*").order("created_at"),
+      sb.from("interviewers").select("*").order("created_at"),
       sb
         .from("candidates")
         .select(
@@ -33,9 +35,11 @@ export default async function DashboardPage() {
     ]);
 
     if (positionsRes.error) throw positionsRes.error;
+    if (interviewersRes.error) throw interviewersRes.error;
     if (candidatesRes.error) throw candidatesRes.error;
 
     positions = (positionsRes.data ?? []) as Position[];
+    interviewers = (interviewersRes.data ?? []) as Interviewer[];
     candidates = (candidatesRes.data ?? []) as Candidate[];
   } catch (err) {
     loadError =
@@ -101,7 +105,11 @@ export default async function DashboardPage() {
             </p>
           </div>
         ) : (
-          <Workbench positions={positions} candidates={candidates} />
+          <Workbench
+            positions={positions}
+            interviewers={interviewers}
+            candidates={candidates}
+          />
         )}
       </main>
     </div>

@@ -6,14 +6,17 @@ import {
   ChevronRight,
   Filter,
   Inbox,
+  Settings2,
   UserCog,
 } from "lucide-react";
-import type { Candidate, Position } from "@/lib/types";
+import type { Candidate, Interviewer, Position } from "@/lib/types";
 import { ROUND_LABEL } from "@/lib/constants";
+import { InterviewerManageDialog } from "./interviewer-manage-dialog";
 
 interface ScheduleViewProps {
   candidates: Candidate[];
   positions: Position[];
+  interviewers: Interviewer[];
   onSelect: (candidateId: string) => void;
 }
 
@@ -59,23 +62,33 @@ function groupKey(iso: string): string {
 export function ScheduleView({
   candidates,
   positions,
+  interviewers,
   onSelect,
 }: ScheduleViewProps) {
   const [positionId, setPositionId] = useState<string>("all");
   const [interviewerFilter, setInterviewerFilter] =
     useState<string>(INTERVIEWER_ALL);
+  const [manageOpen, setManageOpen] = useState(false);
 
-  // 面试官候选：取所有面试记录中出现过的姓名（含历史），按拼音/出现顺序去重
+  // 面试官筛选候选：以名册为准，并并入日程中出现的历史遗留姓名
   const interviewerOptions = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set(interviewers.map((p) => p.name));
+    const cutoff = startOfToday().getTime();
     for (const c of candidates) {
       for (const i of c.interviews ?? []) {
-        const name = i.interviewer?.trim();
-        if (name) set.add(name);
+        const pending = i.round === 1 ? "初试排期" : "复试排期";
+        if (
+          c.status === pending &&
+          i.scheduled_time &&
+          new Date(i.scheduled_time).getTime() >= cutoff &&
+          i.interviewer?.trim()
+        ) {
+          set.add(i.interviewer.trim());
+        }
       }
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
-  }, [candidates]);
+  }, [interviewers, candidates]);
 
   const items = useMemo<ScheduleItem[]>(() => {
     const cutoff = startOfToday().getTime();
@@ -136,6 +149,14 @@ export function ScheduleView({
           )}
         </p>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setManageOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-input bg-white px-3 text-sm text-slate-600 shadow-sm transition hover:border-emerald-300 hover:text-emerald-600"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            面试官管理
+          </button>
           <div className="relative">
             <UserCog className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <select
@@ -274,6 +295,12 @@ export function ScheduleView({
           })}
         </div>
       )}
+
+      <InterviewerManageDialog
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        interviewers={interviewers}
+      />
     </div>
   );
 }

@@ -157,6 +157,81 @@ export async function setPositionStatusAction(
 }
 
 // ---------------------------------------------------------------------
+// 面试官名册
+// ---------------------------------------------------------------------
+
+export async function createInterviewerAction(
+  name: string
+): Promise<ActionResult> {
+  await requireSession();
+
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, error: "请填写面试官姓名" };
+  if (trimmed.length > 50)
+    return { ok: false, error: "姓名不能超过 50 个字" };
+
+  const sb = getSupabase();
+  const { error } = await sb.from("interviewers").insert({ name: trimmed });
+  if (error) {
+    if (/duplicate|unique/i.test(error.message)) {
+      return { ok: false, error: "该面试官已存在" };
+    }
+    return { ok: false, error: `添加失败：${error.message}` };
+  }
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+export async function deleteInterviewerAction(
+  id: string
+): Promise<ActionResult> {
+  await requireSession();
+
+  const sb = getSupabase();
+  const { data: row, error: fetchError } = await sb
+    .from("interviewers")
+    .select("name")
+    .eq("id", id)
+    .maybeSingle();
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!row) return { ok: false, error: "面试官不存在" };
+
+  // 占用校验：仍有“待进行”的面试指定该面试官时禁止删除
+  const { data: used } = await sb
+    .from("interviews")
+    .select("scheduled_time, candidates!inner(status)")
+    .eq("interviewer", row.name);
+
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  const pendingCount = (used ?? []).filter((i) => {
+    const candidate = i.candidates as unknown as { status?: string } | null;
+    const isPending =
+      candidate?.status === "初试排期" ||
+      candidate?.status === "复试排期";
+    return (
+      isPending &&
+      i.scheduled_time &&
+      new Date(i.scheduled_time).getTime() >= cutoff.getTime()
+    );
+  }).length;
+
+  if (pendingCount > 0) {
+    return {
+      ok: false,
+      error: `该面试官还有 ${pendingCount} 场待进行的面试，请先在候选人详情中改派面试官`,
+    };
+  }
+
+  const { error } = await sb.from("interviewers").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------
 // 候选人
 // ---------------------------------------------------------------------
 
@@ -297,6 +372,35 @@ export async function advanceStatusAction(
     scheduledIso = parsed.toISOString();
   }
 
+  // 面试官姓名必须来自名册（未填则视为未分配）；
+  // 例外：与该候选人本轮既有面试官同名（历史遗留姓名），允许原样保留
+  const interviewerName = (interviewer ?? "").trim().slice(0, 50) || null;
+  if (interviewerName) {
+    let isLegacy = false;
+    if (round) {
+      const { data: legacy } = await sb
+        .from("interviews")
+        .select("interviewer")
+        .eq("candidate_id", candidateId)
+        .eq("round", round)
+        .maybeSingle();
+      isLegacy = legacy?.interviewer === interviewerName;
+    }
+    if (!isLegacy) {
+      const { data: rosterRow } = await sb
+        .from("interviewers")
+        .select("id")
+        .eq("name", interviewerName)
+        .maybeSingle();
+      if (!rosterRow) {
+        return {
+          ok: false,
+          error: `面试官「${interviewerName}」不在名册中，请先在「面试日程表」中添加`,
+        };
+      }
+    }
+  }
+
   const { error: updateError } = await sb
     .from("candidates")
     .update({ status: target })
@@ -304,7 +408,6 @@ export async function advanceStatusAction(
   if (updateError) return { ok: false, error: updateError.message };
 
   // 进入初/复试排期时，创建对应面试记录并写入已确认的面试时间与面试官
-  const interviewerName = (interviewer ?? "").trim().slice(0, 50) || null;
   if (round) {
     const { data: existing } = await sb
       .from("interviews")

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CalendarClock,
+  ChevronDown,
   Download,
   ExternalLink,
   FileText,
@@ -49,8 +50,8 @@ interface CandidateDrawerProps {
   onClose: () => void;
   operatorName: string;
   onOperatorChange: (v: string) => void;
-  /** 历史面试官姓名，用于输入候选 */
-  knownInterviewers?: string[];
+  /** 面试官名册姓名 */
+  interviewerNames?: string[];
 }
 
 export function CandidateDrawer({
@@ -58,7 +59,7 @@ export function CandidateDrawer({
   onClose,
   operatorName,
   onOperatorChange,
-  knownInterviewers = [],
+  interviewerNames = [],
 }: CandidateDrawerProps) {
   const router = useRouter();
   const [busy, setBusy] = useState<CandidateStatus | null>(null);
@@ -98,10 +99,8 @@ export function CandidateDrawer({
           ? toLocalInputValue(existing.scheduled_time)
           : defaultScheduleTime()
       );
-      // 默认带出已安排的面试官，否则用当前操作人姓名
-      setScheduleInterviewer(
-        existing?.interviewer ?? operatorName.trim() ?? ""
-      );
+      // 默认带出已安排的面试官（历史值允许保留），否则留空=未分配
+      setScheduleInterviewer(existing?.interviewer ?? "");
       setScheduleError(null);
       setScheduleTarget({ to, round });
     } else {
@@ -319,7 +318,7 @@ export function CandidateDrawer({
                 readOnly={isTerminal}
                 operatorName={operatorName}
                 onOperatorChange={onOperatorChange}
-                knownInterviewers={knownInterviewers}
+                interviewerNames={interviewerNames}
               />
             )}
 
@@ -331,7 +330,7 @@ export function CandidateDrawer({
                 readOnly={isTerminal}
                 operatorName={operatorName}
                 onOperatorChange={onOperatorChange}
-                knownInterviewers={knownInterviewers}
+                interviewerNames={interviewerNames}
               />
             )}
 
@@ -379,19 +378,26 @@ export function CandidateDrawer({
             <Label className="mb-1.5">面试官</Label>
             <div className="relative">
               <UserCog className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                list="schedule-interviewer-options"
+              <select
                 value={scheduleInterviewer}
                 onChange={(e) => setScheduleInterviewer(e.target.value)}
-                placeholder="负责本轮面试的人"
-                maxLength={50}
-                className="flex h-10 w-full rounded-xl border border-input bg-white pl-9 pr-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-              />
-              <datalist id="schedule-interviewer-options">
-                {knownInterviewers.map((name) => (
-                  <option key={name} value={name} />
+                className="flex h-10 w-full appearance-none rounded-xl border border-input bg-white pl-9 pr-9 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              >
+                <option value="">未分配面试官</option>
+                {interviewerNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
                 ))}
-              </datalist>
+                {/* 历史值已不在名册时原样保留 */}
+                {scheduleInterviewer &&
+                  !interviewerNames.includes(scheduleInterviewer) && (
+                    <option value={scheduleInterviewer}>
+                      {scheduleInterviewer}（已删除）
+                    </option>
+                  )}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
           </div>
           <div className="flex justify-end gap-2">

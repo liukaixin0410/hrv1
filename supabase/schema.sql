@@ -76,12 +76,22 @@ create index if not exists candidate_status_logs_candidate_idx
   on candidate_status_logs (candidate_id, created_at desc);
 
 -- ---------------------------------------------------------------------
+-- 4.1 面试官名册（姓名唯一；interviews.interviewer 为文本快照，保留历史）
+-- ---------------------------------------------------------------------
+create table if not exists interviewers (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null unique,
+  created_at  timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------
 -- 5. Phase 1：关闭 RLS（团队内部约定协作，Phase 2 再做权限隔离）
 -- ---------------------------------------------------------------------
 alter table positions              disable row level security;
 alter table candidates             disable row level security;
 alter table interviews             disable row level security;
 alter table candidate_status_logs  disable row level security;
+alter table interviewers           disable row level security;
 
 -- ---------------------------------------------------------------------
 -- 6. 简历文件存储桶（公开读，服务端 service_role 上传）

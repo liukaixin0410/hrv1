@@ -18,6 +18,12 @@ export interface Position {
   created_at: string;
 }
 
+export interface Interviewer {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
 export interface Interview {
   id: string;
   candidate_id: string;
