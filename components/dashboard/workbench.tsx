@@ -12,6 +12,7 @@ import {
   KanbanSquare,
   BriefcaseBusiness,
   Plus,
+  UserCog,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,28 @@ interface WorkbenchProps {
 }
 
 type TabKey = "board" | "schedule";
+
+/** 候选人是否匹配面试官筛选（看板与日程共用同一口径） */
+function matchInterviewerFilter(
+  c: Candidate,
+  filter: string,
+  cutoffT: number
+): boolean {
+  if (filter === INTERVIEWER_ALL) return true;
+  if (filter === INTERVIEWER_NONE) {
+    // 有“今天及以后待进行”且未分配面试官的面试
+    return (c.interviews ?? []).some((i) => {
+      if (!i.scheduled_time || i.interviewer?.trim()) return false;
+      if (new Date(i.scheduled_time).getTime() < cutoffT) return false;
+      const pending = i.round === 1 ? "初试排期" : "复试排期";
+      return c.status === pending;
+    });
+  }
+  // 指定面试官：该候选人历史任意一轮面试由 TA 负责
+  return (c.interviews ?? []).some(
+    (i) => i.interviewer?.trim() === filter
+  );
+}
 
 export function Workbench({
   positions,
@@ -66,15 +89,19 @@ export function Workbench({
   }, [candidates, positions]);
 
   const filtered = useMemo(() => {
-    const byPosition =
-      positionFilter === "all"
-        ? candidates
-        : candidates.filter((c) => c.position_id === positionFilter);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const cutoffT = todayStart.getTime();
 
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return byPosition;
-
-    return byPosition.filter((c) => {
+    return candidates.filter((c) => {
+      // 岗位筛选（与日程 Tab 共享）
+      if (positionFilter !== "all" && c.position_id !== positionFilter)
+        return false;
+      // 面试官筛选（从日程统计卡跳转时带入，口径与日程一致）
+      if (!matchInterviewerFilter(c, interviewerFilter, cutoffT)) return false;
+      // 关键词搜索
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
       const posTitle = c.position?.title ?? "";
       return (
         c.name.toLowerCase().includes(q) ||
@@ -82,7 +109,7 @@ export function Workbench({
         posTitle.toLowerCase().includes(q)
       );
     });
-  }, [candidates, positionFilter, searchQuery]);
+  }, [candidates, positionFilter, interviewerFilter, searchQuery]);
 
   // 按看板四列口径统计任意候选人集合
   function statsOf(list: Candidate[]) {
@@ -105,24 +132,11 @@ export function Workbench({
     const cutoff = new Date();
     cutoff.setHours(0, 0, 0, 0);
     const cutoffT = cutoff.getTime();
-    return candidates.filter((c) => {
-      if (positionFilter !== "all" && c.position_id !== positionFilter)
-        return false;
-      if (interviewerFilter === INTERVIEWER_ALL) return true;
-      if (interviewerFilter === INTERVIEWER_NONE) {
-        // 有“今天及以后待进行”且未分配面试官的面试
-        return (c.interviews ?? []).some((i) => {
-          if (!i.scheduled_time || i.interviewer?.trim()) return false;
-          if (new Date(i.scheduled_time).getTime() < cutoffT) return false;
-          const pending = i.round === 1 ? "初试排期" : "复试排期";
-          return c.status === pending;
-        });
-      }
-      // 指定面试官：该候选人历史任意一轮面试由 TA 负责
-      return (c.interviews ?? []).some(
-        (i) => i.interviewer?.trim() === interviewerFilter
-      );
-    });
+    return candidates.filter(
+      (c) =>
+        (positionFilter === "all" || c.position_id === positionFilter) &&
+        matchInterviewerFilter(c, interviewerFilter, cutoffT)
+    );
   }, [candidates, positionFilter, interviewerFilter]);
 
   const scheduleStats = useMemo(() => statsOf(scheduleFiltered), [scheduleFiltered]);
@@ -130,7 +144,11 @@ export function Workbench({
   /** 点击统计卡：（可跨 Tab）平滑滚动到对应看板列并短暂高亮 */
   function jumpToColumn(key: string, switchTab = false) {
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    if (switchTab) setTab("board");
+    if (switchTab) {
+      setTab("board");
+      // 清除关键词，保证看板列人数与日程统计卡数字一致
+      setSearchQuery("");
+    }
     setHighlightKey(key);
     const scroll = () =>
       document
@@ -200,6 +218,28 @@ export function Workbench({
                 })),
               ]}
             />
+            {/* 面试官筛选（从面试日程带入），可一键清除 */}
+            {interviewerFilter !== INTERVIEWER_ALL && (
+              <span className="inline-flex h-9 w-full items-center justify-between gap-1.5 whitespace-nowrap rounded-lg border border-amber-200 bg-amber-50 px-3 text-sm text-amber-700 lg:w-auto">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <UserCog className="h-4 w-4 shrink-0" />
+                  <span className="truncate">
+                    面试官：
+                    {interviewerFilter === INTERVIEWER_NONE
+                      ? "未分配"
+                      : interviewerFilter}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  aria-label="清除面试官筛选"
+                  onClick={() => setInterviewerFilter(INTERVIEWER_ALL)}
+                  className="shrink-0 rounded-full p-0.5 transition hover:bg-amber-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            )}
             <div className="relative lg:w-64">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
