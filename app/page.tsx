@@ -55,7 +55,7 @@ export default async function DashboardPage() {
                 招聘工作台
               </h1>
               <p className="text-[11px] leading-tight text-muted-foreground">
-                Phase 1 · 全员协作
+                Phase 1.1 · 全员协作
               </p>
             </div>
           </div>

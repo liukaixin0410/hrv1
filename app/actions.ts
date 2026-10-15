@@ -92,6 +92,70 @@ export async function logoutAction() {
 }
 
 // ---------------------------------------------------------------------
+// 岗位
+// ---------------------------------------------------------------------
+
+export async function createPositionAction(
+  title: string
+): Promise<ActionResult> {
+  await requireSession();
+
+  const trimmed = title.trim();
+  if (!trimmed) return { ok: false, error: "请填写岗位名称" };
+  if (trimmed.length > 50)
+    return { ok: false, error: "岗位名称不能超过 50 个字" };
+
+  const sb = getSupabase();
+  // 若同名岗位被停用，直接重新启用而不是报错
+  const { data: existing } = await sb
+    .from("positions")
+    .select("id, status")
+    .eq("title", trimmed)
+    .maybeSingle();
+
+  if (existing) {
+    if (existing.status === "closed") {
+      const { error } = await sb
+        .from("positions")
+        .update({ status: "active" })
+        .eq("id", existing.id);
+      if (error) return { ok: false, error: error.message };
+      revalidatePath("/");
+      return { ok: true };
+    }
+    return { ok: false, error: "该岗位已存在" };
+  }
+
+  const { error } = await sb.from("positions").insert({ title: trimmed });
+  if (error) {
+    if (error.message.includes("duplicate") || /unique/i.test(error.message)) {
+      return { ok: false, error: "该岗位已存在" };
+    }
+    return { ok: false, error: `岗位创建失败：${error.message}` };
+  }
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+export async function setPositionStatusAction(
+  positionId: string,
+  status: "active" | "closed"
+): Promise<ActionResult> {
+  await requireSession();
+
+  const sb = getSupabase();
+  const { error } = await sb
+    .from("positions")
+    .update({ status })
+    .eq("id", positionId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------
 // 候选人
 // ---------------------------------------------------------------------
 
@@ -107,6 +171,17 @@ export async function createCandidateAction(
 
   if (!name) return { ok: false, error: "请填写候选人姓名" };
   if (!positionId) return { ok: false, error: "请选择应聘岗位" };
+
+  // 校验岗位存在且处于招聘中（已停用岗位不可再录入）
+  const sbCheck = getSupabase();
+  const { data: position } = await sbCheck
+    .from("positions")
+    .select("id, status")
+    .eq("id", positionId)
+    .maybeSingle();
+  if (!position) return { ok: false, error: "所选岗位不存在" };
+  if (position.status === "closed")
+    return { ok: false, error: "该岗位已停用，不能录入候选人" };
 
   let resumeUrl: string | null = null;
   if (file && file instanceof File && file.size > 0) {
@@ -169,7 +244,9 @@ const ALLOWED_ADVANCES: Record<string, CandidateStatus> = {
 export async function advanceStatusAction(
   candidateId: string,
   toStatus: CandidateStatus,
-  operatorName: string
+  operatorName: string,
+  /** 推进到初试/复试排期时必传的面试时间（ISO） */
+  scheduledTime?: string | null
 ): Promise<ActionResult> {
   await requireSession();
 
@@ -199,26 +276,51 @@ export async function advanceStatusAction(
     target = toStatus;
   }
 
+  // 进入初/复试排期时，强制要求面试时间
+  const round: 1 | 2 | null =
+    target === "初试排期" ? 1 : target === "复试排期" ? 2 : null;
+  let scheduledIso: string | null = null;
+  if (round) {
+    if (!scheduledTime) {
+      return {
+        ok: false,
+        error: `请先选择${round === 1 ? "初试" : "复试"}时间再推进`,
+      };
+    }
+    const parsed = new Date(scheduledTime);
+    if (Number.isNaN(parsed.getTime())) {
+      return { ok: false, error: "面试时间格式不正确" };
+    }
+    scheduledIso = parsed.toISOString();
+  }
+
   const { error: updateError } = await sb
     .from("candidates")
     .update({ status: target })
     .eq("id", candidateId);
   if (updateError) return { ok: false, error: updateError.message };
 
-  // 进入初/复试排期时，确保对应的面试记录存在
-  const round: 1 | 2 | null =
-    target === "初试排期" ? 1 : target === "复试排期" ? 2 : null;
+  // 进入初/复试排期时，创建对应面试记录并写入已确认的面试时间
   if (round) {
     const { data: existing } = await sb
       .from("interviews")
-      .select("id")
+      .select("id, scheduled_time")
       .eq("candidate_id", candidateId)
       .eq("round", round)
       .maybeSingle();
-    if (!existing) {
+    if (existing) {
+      // 已有记录但缺时间（历史数据兼容），补上时间
+      if (!existing.scheduled_time) {
+        await sb
+          .from("interviews")
+          .update({ scheduled_time: scheduledIso, updated_at: new Date().toISOString() })
+          .eq("id", existing.id);
+      }
+    } else {
       await sb.from("interviews").insert({
         candidate_id: candidateId,
         round,
+        scheduled_time: scheduledIso,
       });
     }
   }
@@ -230,11 +332,19 @@ export async function advanceStatusAction(
     已淘汰: "淘汰候选人",
   };
 
+  let note = noteMap[target] ?? null;
+  if (round && scheduledIso) {
+    const timeStr = new Date(scheduledIso).toLocaleString("zh-CN", {
+      hour12: false,
+    });
+    note = `${note ?? "安排面试"} · ${timeStr}`;
+  }
+
   await writeLog({
     candidateId,
     fromStatus,
     toStatus: target,
-    note: noteMap[target] ?? null,
+    note,
     operatorName: operatorName.trim() || null,
   });
 
@@ -268,6 +378,14 @@ export async function saveInterviewAction(params: {
   const operatorName = params.operatorName.trim() || null;
   const fromStatus = candidate.status as CandidateStatus;
 
+  // 排期状态下必须保留面试时间（日程表依赖）
+  const schedulingStatus: CandidateStatus =
+    params.round === 1 ? "初试排期" : "复试排期";
+  const doneStatus = ROUND_DONE_STATUS[params.round];
+  if (fromStatus === schedulingStatus && !params.scheduledTime) {
+    return { ok: false, error: "请先选择面试时间" };
+  }
+
   // upsert：每个候选人每轮仅一条记录
   const { data: existing } = await sb
     .from("interviews")
@@ -299,9 +417,6 @@ export async function saveInterviewAction(params: {
   }
 
   // 填写了评价且当前处于对应“排期”状态 -> 推进到“完成”
-  const schedulingStatus: CandidateStatus =
-    params.round === 1 ? "初试排期" : "复试排期";
-  const doneStatus = ROUND_DONE_STATUS[params.round];
 
   if (feedback && fromStatus === schedulingStatus) {
     const { error } = await sb

@@ -1,12 +1,24 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Users2, Clock3, CheckCircle2, Search, X } from "lucide-react";
+import {
+  Plus,
+  Users2,
+  Clock3,
+  CheckCircle2,
+  Search,
+  X,
+  CalendarClock,
+  KanbanSquare,
+  BriefcaseBusiness,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PositionSwitcher } from "./position-switcher";
 import { AddCandidateDialog } from "./add-candidate-dialog";
+import { PositionManageDialog } from "./position-manage-dialog";
 import { KanbanBoard } from "./kanban-board";
+import { ScheduleView } from "./interview-schedule";
 import { CandidateDrawer } from "./candidate-drawer";
 import { useOperatorName } from "./use-operator";
 import { BOARD_COLUMNS } from "@/lib/constants";
@@ -17,11 +29,15 @@ interface WorkbenchProps {
   candidates: Candidate[];
 }
 
+type TabKey = "board" | "schedule";
+
 export function Workbench({ positions, candidates }: WorkbenchProps) {
+  const [tab, setTab] = useState<TabKey>("board");
   const [positionFilter, setPositionFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [operatorName, setOperatorName] = useOperatorName();
 
   const counts = useMemo(() => {
@@ -62,73 +78,124 @@ export function Workbench({ positions, candidates }: WorkbenchProps) {
     return s;
   }, [filtered]);
 
+  // 今日及以后待进行的面试数（用于日程 Tab 角标）
+  const upcomingCount = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    const t = cutoff.getTime();
+    let n = 0;
+    for (const c of candidates) {
+      for (const i of c.interviews ?? []) {
+        if (!i.scheduled_time) continue;
+        if (new Date(i.scheduled_time).getTime() < t) continue;
+        const pending = i.round === 1 ? "初试排期" : "复试排期";
+        if (c.status === pending) n++;
+      }
+    }
+    return n;
+  }, [candidates]);
+
   const selected = candidates.find((c) => c.id === selectedId) ?? null;
 
   return (
     <div>
-      {/* 概览统计卡 */}
-      <div className="mb-5 grid grid-cols-3 gap-3">
-        <StatCard
-          icon={<Users2 className="h-4 w-4" />}
-          label="候选人总数"
-          value={stats.total}
-          tone="emerald"
+      {/* 双 Tab 切换 */}
+      <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+        <TabButton
+          active={tab === "board"}
+          onClick={() => setTab("board")}
+          icon={<KanbanSquare className="h-4 w-4" />}
+          label="候选人看板"
         />
-        <StatCard
-          icon={<Clock3 className="h-4 w-4" />}
-          label="面试中"
-          value={stats.interviewing}
-          tone="blue"
-        />
-        <StatCard
-          icon={<CheckCircle2 className="h-4 w-4" />}
-          label="已结束"
-          value={stats.closed}
-          tone="violet"
+        <TabButton
+          active={tab === "schedule"}
+          onClick={() => setTab("schedule")}
+          icon={<CalendarClock className="h-4 w-4" />}
+          label="面试日程表"
+          badge={upcomingCount}
         />
       </div>
 
-      {/* 顶部操作区 */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <PositionSwitcher
-          positions={positions}
-          value={positionFilter}
-          onChange={setPositionFilter}
-          counts={counts}
-        />
-        <div className="relative sm:ml-2 sm:w-64">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜姓名 / 状态 / 岗位…"
-            className="pl-9 pr-8"
+      {tab === "board" ? (
+        <>
+          {/* 概览统计卡 */}
+          <div className="mb-5 grid grid-cols-3 gap-3">
+            <StatCard
+              icon={<Users2 className="h-4 w-4" />}
+              label="候选人总数"
+              value={stats.total}
+              tone="emerald"
+            />
+            <StatCard
+              icon={<Clock3 className="h-4 w-4" />}
+              label="面试中"
+              value={stats.interviewing}
+              tone="blue"
+            />
+            <StatCard
+              icon={<CheckCircle2 className="h-4 w-4" />}
+              label="已结束"
+              value={stats.closed}
+              tone="violet"
+            />
+          </div>
+
+          {/* 顶部操作区 */}
+          <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
+            <PositionSwitcher
+              positions={positions}
+              value={positionFilter}
+              onChange={setPositionFilter}
+              counts={counts}
+            />
+            <div className="relative lg:ml-2 lg:w-64">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜姓名 / 状态 / 岗位…"
+                className="pl-9 pr-8"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                  aria-label="清除搜索"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2 sm:ml-auto">
+              <Button
+                variant="outline"
+                onClick={() => setManageOpen(true)}
+                className="shrink-0"
+              >
+                <BriefcaseBusiness className="h-4 w-4" />
+                岗位管理
+              </Button>
+              <Button onClick={() => setAddOpen(true)} className="shrink-0">
+                <Plus className="h-4 w-4" />
+                录入简历
+              </Button>
+            </div>
+          </div>
+
+          {/* 核心内容区：三列看板 */}
+          <KanbanBoard
+            candidates={filtered}
+            onSelect={(c) => setSelectedId(c.id)}
           />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-              aria-label="清除搜索"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-        <Button
-          onClick={() => setAddOpen(true)}
-          className="shrink-0 sm:ml-auto"
-        >
-          <Plus className="h-4 w-4" />
-          录入简历
-        </Button>
-      </div>
-
-      {/* 核心内容区：三列看板 */}
-      <KanbanBoard
-        candidates={filtered}
-        onSelect={(c) => setSelectedId(c.id)}
-      />
+        </>
+      ) : (
+        <ScheduleView
+          candidates={candidates}
+          positions={positions}
+          onSelect={(id) => setSelectedId(id)}
+        />
+      )}
 
       <AddCandidateDialog
         open={addOpen}
@@ -136,6 +203,13 @@ export function Workbench({ positions, candidates }: WorkbenchProps) {
         positions={positions}
       />
 
+      <PositionManageDialog
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        positions={positions}
+      />
+
+      {/* 抽屉跨 Tab 共享：从日程点入也能直接唤起 */}
       <CandidateDrawer
         candidate={selected}
         onClose={() => setSelectedId(null)}
@@ -143,6 +217,44 @@ export function Workbench({ positions, candidates }: WorkbenchProps) {
         onOperatorChange={setOperatorName}
       />
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+  badge,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  badge?: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition ${
+        active
+          ? "bg-emerald-500 text-white shadow-sm"
+          : "text-muted-foreground hover:bg-slate-100 hover:text-slate-700"
+      }`}
+    >
+      {icon}
+      {label}
+      {typeof badge === "number" && badge > 0 && (
+        <span
+          className={`ml-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold ${
+            active ? "bg-white/25 text-white" : "bg-emerald-50 text-emerald-600"
+          }`}
+        >
+          {badge}
+        </span>
+      )}
+    </button>
   );
 }
 

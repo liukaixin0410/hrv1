@@ -13,6 +13,8 @@ export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];
 export interface Position {
   id: string;
   title: string;
+  /** active=招聘中, closed=已停用（停用后不可再录入，但历史数据保留） */
+  status: "active" | "closed";
   created_at: string;
 }
 

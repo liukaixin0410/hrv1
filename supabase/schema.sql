@@ -8,11 +8,12 @@
 create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------------------
--- 1. 岗位表
+-- 1. 岗位表（status: active=招聘中, closed=已停用）
 -- ---------------------------------------------------------------------
 create table if not exists positions (
   id          uuid primary key default gen_random_uuid(),
   title       text not null unique,
+  status      text not null default 'active' check (status in ('active', 'closed')),
   created_at  timestamptz not null default now()
 );
 
@@ -55,6 +56,7 @@ create table if not exists interviews (
 );
 
 create index if not exists interviews_candidate_id_idx on interviews (candidate_id);
+create index if not exists interviews_scheduled_time_idx on interviews (scheduled_time);
 
 -- ---------------------------------------------------------------------
 -- 4. 状态流转日志（候选人时间线）

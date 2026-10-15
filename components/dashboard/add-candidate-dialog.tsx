@@ -84,6 +84,9 @@ export function AddCandidateDialog({
     router.refresh();
   }
 
+  // 已停用岗位不出现在录入下拉中（历史候选人的岗位名走 join，不受影响）
+  const activePositions = positions.filter((p) => p.status === "active");
+
   return (
     <Modal
       open={open}
@@ -116,7 +119,7 @@ export function AddCandidateDialog({
               className="flex h-9 w-full rounded-lg border border-input bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/15"
             >
               <option value="">请选择岗位</option>
-              {positions.map((p) => (
+              {activePositions.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.title}
                 </option>

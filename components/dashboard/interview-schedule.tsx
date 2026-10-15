@@ -1,0 +1,222 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  CalendarClock,
+  ChevronRight,
+  Filter,
+  Inbox,
+} from "lucide-react";
+import type { Candidate, Position } from "@/lib/types";
+import { ROUND_LABEL } from "@/lib/constants";
+
+interface ScheduleViewProps {
+  candidates: Candidate[];
+  positions: Position[];
+  onSelect: (candidateId: string) => void;
+}
+
+interface ScheduleItem {
+  candidate: Candidate;
+  round: 1 | 2;
+  time: string; // ISO
+}
+
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/** 与“今天 0 点”的天数差：今天=0，明天=1 */
+function dayDiff(iso: string): number {
+  const d = new Date(iso);
+  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const t = startOfToday().getTime();
+  return Math.round((a - t) / 86_400_000);
+}
+
+function dayLabel(diff: number): string {
+  if (diff === 0) return "今天";
+  if (diff === 1) return "明天";
+  if (diff === 2) return "后天";
+  return "";
+}
+
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+function groupKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+export function ScheduleView({
+  candidates,
+  positions,
+  onSelect,
+}: ScheduleViewProps) {
+  const [positionId, setPositionId] = useState<string>("all");
+
+  const items = useMemo<ScheduleItem[]>(() => {
+    const cutoff = startOfToday().getTime();
+    return candidates
+      .filter((c) => !positionId || positionId === "all" || c.position_id === positionId)
+      .flatMap((c) =>
+        (c.interviews ?? [])
+          .filter((i) => {
+            if (!i.scheduled_time) return false;
+            if (new Date(i.scheduled_time).getTime() < cutoff) return false;
+            // 仅展示“待进行”的面试：候选人当前仍处于该轮排期状态
+            const pendingStatus = i.round === 1 ? "初试排期" : "复试排期";
+            return c.status === pendingStatus;
+          })
+          .map((i) => ({
+            candidate: c,
+            round: i.round as 1 | 2,
+            time: i.scheduled_time as string,
+          }))
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.time).getTime() - new Date(b.time).getTime()
+      );
+  }, [candidates, positionId]);
+
+  // 按天分组（已按时间升序）
+  const groups = useMemo(() => {
+    const map = new Map<string, ScheduleItem[]>();
+    for (const item of items) {
+      const key = groupKey(item.time);
+      const arr = map.get(key);
+      if (arr) arr.push(item);
+      else map.set(key, [item]);
+    }
+    return Array.from(map.entries());
+  }, [items]);
+
+  const todayCount = items.filter((i) => dayDiff(i.time) === 0).length;
+
+  return (
+    <div className="space-y-4">
+      {/* 过滤栏 */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          展示今天及以后待进行的面试，按时间升序排列
+          {todayCount > 0 && (
+            <span className="ml-1.5 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-600">
+              今天 {todayCount} 场
+            </span>
+          )}
+        </p>
+        <div className="relative">
+          <Filter className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <select
+            value={positionId}
+            onChange={(e) => setPositionId(e.target.value)}
+            className="h-9 rounded-lg border border-input bg-white pl-8 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-100"
+          >
+            <option value="all">全部岗位</option>
+            {positions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.title}
+                {p.status === "closed" ? "（已停用）" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {groups.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-white/60 py-20 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
+            <Inbox className="h-6 w-6 text-slate-400" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-slate-600">
+              暂无待进行的面试安排
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              在候选人详情中推进到初试/复试并选择时间后，这里会自动出现
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {groups.map(([key, dayItems]) => {
+            const diff = dayDiff(dayItems[0].time);
+            const d = new Date(dayItems[0].time);
+            return (
+              <div key={key}>
+                {/* 日期分组头 */}
+                <div className="mb-2 flex items-center gap-2">
+                  <CalendarClock
+                    className={`h-4 w-4 ${
+                      diff <= 1 ? "text-emerald-500" : "text-slate-400"
+                    }`}
+                  />
+                  <h3 className="text-sm font-semibold">
+                    {dayLabel(diff) ??
+                      `${d.getMonth() + 1}月${d.getDate()}日`}
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                      {WEEKDAYS[d.getDay()]}
+                    </span>
+                  </h3>
+                  <span className="text-xs text-muted-foreground">
+                    {dayItems.length} 场
+                  </span>
+                  <div className="h-px flex-1 bg-slate-100" />
+                </div>
+
+                {/* 日程卡片 */}
+                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                  {dayItems.map((item) => {
+                    const t = new Date(item.time);
+                    const hh = String(t.getHours()).padStart(2, "0");
+                    const mm = String(t.getMinutes()).padStart(2, "0");
+                    const isRound2 = item.round === 2;
+                    return (
+                      <button
+                        key={`${item.candidate.id}-${item.round}`}
+                        type="button"
+                        onClick={() => onSelect(item.candidate.id)}
+                        className="group flex items-center gap-3.5 rounded-2xl border border-slate-100 bg-white px-4 py-3.5 text-left card-soft transition hover:border-emerald-200 hover:shadow-md"
+                      >
+                        {/* 时间块 */}
+                        <div className="flex w-12 shrink-0 flex-col items-center rounded-xl bg-slate-50 py-1.5">
+                          <span className="text-base font-bold leading-tight text-slate-800">
+                            {hh}:{mm}
+                          </span>
+                        </div>
+                        {/* 信息 */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-semibold">
+                              {item.candidate.name}
+                            </span>
+                            <span
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                isRound2
+                                  ? "bg-blue-50 text-blue-600"
+                                  : "bg-emerald-50 text-emerald-600"
+                              }`}
+                            >
+                              {ROUND_LABEL[item.round]}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            应聘岗位：{item.candidate.position?.title ?? "—"}
+                          </p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-emerald-500" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

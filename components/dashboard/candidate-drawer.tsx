@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  CalendarClock,
   Download,
   ExternalLink,
   FileText,
@@ -10,8 +11,10 @@ import {
   UserRound,
 } from "lucide-react";
 import { Sheet } from "@/components/ui/sheet";
+import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { InterviewCard } from "./interview-card";
 import { Timeline } from "./timeline";
 import { advanceStatusAction } from "@/app/actions";
@@ -20,12 +23,25 @@ import {
   nextStatus,
   statusBadgeClass,
 } from "@/lib/constants";
-import { formatDateTime, resumeKind } from "@/lib/utils";
+import {
+  formatDateTime,
+  resumeKind,
+  toLocalInputValue,
+} from "@/lib/utils";
 import {
   CANDIDATE_STATUSES,
   type Candidate,
   type CandidateStatus,
 } from "@/lib/types";
+
+/** 默认面试时间：明天上午 10:00（本地时区，datetime-local 值） */
+function defaultScheduleTime(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(10, 0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 interface CandidateDrawerProps {
   candidate: Candidate | null;
@@ -43,6 +59,13 @@ export function CandidateDrawer({
   const router = useRouter();
   const [busy, setBusy] = useState<CandidateStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 推进到初/复试时的强制排期弹窗
+  const [scheduleTarget, setScheduleTarget] = useState<{
+    to: CandidateStatus;
+    round: 1 | 2;
+  } | null>(null);
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   const interviewMap = useMemo(() => {
     const map = new Map<number, NonNullable<Candidate["interviews"]>[number]>();
@@ -60,7 +83,38 @@ export function CandidateDrawer({
   const isTerminal = TERMINAL_STATUSES.includes(candidate.status);
   const next = nextStatus(candidate.status);
 
-  async function handleAdvance(to: CandidateStatus) {
+  function openAdvance(to: CandidateStatus) {
+    if (to === "初试排期" || to === "复试排期") {
+      const round: 1 | 2 = to === "初试排期" ? 1 : 2;
+      // 默认带出已存的面试时间
+      const existing = interviewMap.get(round);
+      setScheduleTime(
+        existing?.scheduled_time
+          ? toLocalInputValue(existing.scheduled_time)
+          : defaultScheduleTime()
+      );
+      setScheduleError(null);
+      setScheduleTarget({ to, round });
+    } else {
+      void handleAdvance(to);
+    }
+  }
+
+  async function confirmSchedule() {
+    if (!scheduleTarget) return;
+    if (!scheduleTime) {
+      setScheduleError(
+        `请选择${scheduleTarget.round === 1 ? "初试" : "复试"}时间`
+      );
+      return;
+    }
+    const iso = new Date(scheduleTime).toISOString();
+    await handleAdvance(scheduleTarget.to, iso);
+    setScheduleTarget(null);
+    setScheduleTime("");
+  }
+
+  async function handleAdvance(to: CandidateStatus, scheduledTime?: string) {
     if (!candidate) return;
     if (
       (to === "已淘汰" && !window.confirm(`确认淘汰「${candidate.name}」？`)) ||
@@ -73,7 +127,8 @@ export function CandidateDrawer({
     const result = await advanceStatusAction(
       candidate.id,
       to,
-      operatorName
+      operatorName,
+      scheduledTime ?? null
     );
     setBusy(null);
     if (!result.ok) {
@@ -218,7 +273,7 @@ export function CandidateDrawer({
                     <Button
                       variant={next.variant === "success" ? "success" : "default"}
                       loading={busy === next.to}
-                      onClick={() => handleAdvance(next.to)}
+                      onClick={() => openAdvance(next.to)}
                     >
                       {next.label}
                     </Button>
@@ -275,6 +330,50 @@ export function CandidateDrawer({
           </section>
         </div>
       </div>
+
+      {/* 推进初/复试时的强制排期弹窗 */}
+      <Modal
+        open={!!scheduleTarget}
+        onClose={() => setScheduleTarget(null)}
+        title={scheduleTarget?.round === 1 ? "安排初试时间" : "安排复试时间"}
+        description="必须先确认面试时间，该时间将同步出现在「面试日程表」中"
+        className="max-w-sm"
+      >
+        <div className="space-y-4">
+          <div>
+            <Label className="mb-1.5">面试时间</Label>
+            <div className="relative">
+              <CalendarClock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="datetime-local"
+                value={scheduleTime}
+                onChange={(e) => {
+                  setScheduleTime(e.target.value);
+                  setScheduleError(null);
+                }}
+                className="flex h-10 w-full rounded-xl border border-input bg-white pl-9 pr-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              />
+            </div>
+            {scheduleError && (
+              <p className="mt-1.5 text-xs text-destructive">{scheduleError}</p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setScheduleTarget(null)}
+            >
+              取消
+            </Button>
+            <Button
+              onClick={confirmSchedule}
+              loading={busy === scheduleTarget?.to}
+            >
+              确认排期并推进
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </Sheet>
   );
 }
