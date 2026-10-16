@@ -1,5 +1,0 @@
-[build]
-  command = "npm run build"
-
-[build.environment]
-  NEXT_DISABLE_CACHE = "1"
