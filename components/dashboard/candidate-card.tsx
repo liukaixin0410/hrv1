@@ -211,6 +211,14 @@ export function CandidateCard({
         className="max-w-sm"
       >
         <div className="space-y-4">
+          {rescheduleInterview?.scheduled_time && (
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
+              原面试时间：
+              <span className="font-medium text-slate-700">
+                {formatDateTime(rescheduleInterview.scheduled_time)}
+              </span>
+            </p>
+          )}
           <div>
             <Label className="mb-1.5">新的面试时间</Label>
             <div className="relative">
