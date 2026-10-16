@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { saveInterviewAction } from "@/app/actions";
 import { ROUND_LABEL } from "@/lib/constants";
-import { formatDateTime, toLocalInputValue } from "@/lib/utils";
+import { cn, formatDateTime, toLocalInputValue } from "@/lib/utils";
 import type { Interview } from "@/lib/types";
 
 interface InterviewCardProps {
@@ -80,6 +80,9 @@ export function InterviewCard({
     router.refresh();
   }
 
+  // 排期中但时间未定（复试暂定）：允许先保存面试官，时间待确认
+  const tentative = !readOnly && !interview?.scheduled_time;
+
   const accent = round === 1 ? "sky" : "blue";
   const accentMap = {
     sky: {
@@ -106,10 +109,17 @@ export function InterviewCard({
             </span>
           </h4>
         </div>
-        <span className={`rounded-full px-2 py-0.5 text-xs ${accentMap[accent].chip}`}>
+        <span
+          className={cn(
+            "rounded-full px-2 py-0.5 text-xs",
+            tentative ? "bg-amber-50 text-amber-600" : accentMap[accent].chip
+          )}
+        >
           {interview?.scheduled_time
             ? formatDateTime(interview.scheduled_time)
-            : "未安排时间"}
+            : tentative
+              ? "时间暂定（待确认）"
+              : "未安排时间"}
         </span>
       </div>
 
@@ -129,6 +139,11 @@ export function InterviewCard({
               className={`h-9 w-full rounded-lg border border-input bg-white pl-9 pr-3 text-sm shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 ${accentMap[accent].ring} disabled:bg-muted/50`}
             />
           </div>
+          {tentative && (
+            <p className="text-xs leading-5 text-amber-600">
+              时间暂定中：选择时间后点底部保存即完成确认，将同步到「面试日程表」。
+            </p>
+          )}
         </div>
 
         <div className="space-y-1.5">

@@ -55,24 +55,33 @@ export function CandidateCard({
   const canReschedule = SCHEDULING_STATUSES.includes(
     candidate.status as never
   );
-  // 当前排期对应的轮次面试
+  // 当前排期对应的轮次面试（Number 兼容 round 为字符串的历史数据）
   const rescheduleRound: 1 | 2 = candidate.status === "复试排期" ? 2 : 1;
   const rescheduleInterview = candidate.interviews?.find(
-    (i) => i.round === rescheduleRound
+    (i) => Number(i.round) === rescheduleRound
   );
+  // 暂定：已推进到复试排期但时间未定（等面试官档期），初试不支持暂定
+  const tentative =
+    canReschedule &&
+    rescheduleRound === 2 &&
+    !rescheduleInterview?.scheduled_time;
 
-  const upcoming = candidate.interviews
-    ?.filter((i) => i.scheduled_time)
-    .sort(
-      (a, b) =>
-        new Date(a.scheduled_time!).getTime() -
-        new Date(b.scheduled_time!).getTime()
-    )[0];
+  // 卡片展示时间：优先“下一场未来面试”，避免复试排期时误显已过的初试时间；
+  // 流程结束时展示最近一场（历史时间）；暂定复试不显示时间，改由暂定 chip 提示
+  const nowTs = Date.now();
+  const sortedScheduled =
+    candidate.interviews
+      ?.filter((i) => i.scheduled_time)
+      .map((i) => ({ i, t: new Date(i.scheduled_time!).getTime() }))
+      .sort((a, b) => a.t - b.t) ?? [];
+  const nextFuture = sortedScheduled.find((x) => x.t >= nowTs)?.i ?? null;
+  const lastOne = sortedScheduled[sortedScheduled.length - 1]?.i ?? null;
+  const upcoming = tentative ? null : (nextFuture ?? lastOne ?? null);
 
   // 仅“仍在排期中但时间已过”才红色告警；已结束流程中的历史时间用中性灰
   const overdue = upcoming
     ? !TERMINAL_STATUSES.includes(candidate.status) &&
-      new Date(upcoming.scheduled_time!).getTime() < Date.now()
+      new Date(upcoming.scheduled_time!).getTime() < nowTs
     : false;
   const historical = upcoming
     ? TERMINAL_STATUSES.includes(candidate.status)
@@ -80,8 +89,10 @@ export function CandidateCard({
 
   function openReschedule(e: React.MouseEvent) {
     e.stopPropagation();
-    if (!canReschedule || !rescheduleInterview?.scheduled_time) return;
-    setRescheduleValue(toLocalInputValue(rescheduleInterview.scheduled_time));
+    if (!canReschedule || !rescheduleInterview) return;
+    setRescheduleValue(
+      toLocalInputValue(rescheduleInterview.scheduled_time ?? null)
+    );
     setRescheduleError(null);
     setRescheduleOpen(true);
   }
@@ -169,6 +180,15 @@ export function CandidateCard({
               文本简历
             </span>
           )}
+          {tentative && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-600"
+              title="复试时间待确认，请与面试官确认后点击「定时间」补录"
+            >
+              <CalendarClock className="h-3 w-3" />
+              复试时间暂定
+            </span>
+          )}
           {upcoming && (
             <span
               className={cn(
@@ -190,12 +210,12 @@ export function CandidateCard({
             <button
               type="button"
               onClick={openReschedule}
-              title="修改面试时间"
-              aria-label={`修改${candidate.name}的面试时间`}
+              title={tentative ? "确认面试时间" : "修改面试时间"}
+              aria-label={`${tentative ? "确认" : "修改"}${candidate.name}的面试时间`}
               className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-600"
             >
               <Pencil className="h-3 w-3" />
-              改期
+              {tentative ? "定时间" : "改期"}
             </button>
           )}
         </div>
@@ -204,7 +224,9 @@ export function CandidateCard({
       <Modal
         open={rescheduleOpen}
         onClose={() => !rescheduleSaving && setRescheduleOpen(false)}
-        title={`修改${rescheduleRound === 1 ? "初试" : "复试"}时间`}
+        title={`${tentative ? "确认" : "修改"}${
+          rescheduleRound === 1 ? "初试" : "复试"
+        }时间`}
         description={`${candidate.name} · ${
           candidate.position?.title ?? "未知岗位"
         }`}

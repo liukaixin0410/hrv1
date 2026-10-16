@@ -354,22 +354,25 @@ export async function advanceStatusAction(
     target = toStatus;
   }
 
-  // 进入初/复试排期时，强制要求面试时间
+  // 进入初/复试排期时：初试必须确认时间；复试允许“暂定”
+  // （场景：需要先推进到复试、等面试官确认时间后再补录）
   const round: 1 | 2 | null =
     target === "初试排期" ? 1 : target === "复试排期" ? 2 : null;
   let scheduledIso: string | null = null;
   if (round) {
-    if (!scheduledTime) {
+    if (scheduledTime) {
+      const parsed = new Date(scheduledTime);
+      if (Number.isNaN(parsed.getTime())) {
+        return { ok: false, error: "面试时间格式不正确" };
+      }
+      scheduledIso = parsed.toISOString();
+    } else if (round === 1) {
       return {
         ok: false,
-        error: `请先选择${round === 1 ? "初试" : "复试"}时间再推进`,
+        error: "请先选择初试时间再推进",
       };
     }
-    const parsed = new Date(scheduledTime);
-    if (Number.isNaN(parsed.getTime())) {
-      return { ok: false, error: "面试时间格式不正确" };
-    }
-    scheduledIso = parsed.toISOString();
+    // round === 2 且未传时间：复试暂定，scheduledIso 保持 null
   }
 
   // 面试官姓名必须来自名册（未填则视为未分配）；
@@ -441,10 +444,14 @@ export async function advanceStatusAction(
   };
 
   let note = noteMap[target] ?? null;
-  // 按北京时间展示，避免服务器 UTC 时区导致备注时间偏移
-  const localTimeText = formatInterviewTimeBeijing(scheduledIso);
-  if (round && localTimeText) {
-    note = `${note ?? "安排面试"} · ${localTimeText}`;
+  if (round) {
+    // 按北京时间展示，避免服务器 UTC 时区导致备注时间偏移
+    const localTimeText = formatInterviewTimeBeijing(scheduledIso);
+    if (localTimeText) {
+      note = `${note ?? "安排面试"} · ${localTimeText}`;
+    } else {
+      note = `${note ?? "安排面试"} · 时间暂定（待确认）`;
+    }
     if (interviewerName) note += ` · 面试官 ${interviewerName}`;
   }
 
@@ -556,12 +563,19 @@ export async function saveInterviewAction(params: {
   const operatorName = params.operatorName.trim() || null;
   const fromStatus = candidate.status as CandidateStatus;
 
-  // 排期状态下必须保留面试时间（日程表依赖）
+  // 排期状态下的时间校验：
+  // - 初试不支持暂定，必须保留时间；
+  // - 复试暂定（无时间）时允许只保存面试官等信息，但提交评价推进前必须先确认时间
   const schedulingStatus: CandidateStatus =
     params.round === 1 ? "初试排期" : "复试排期";
   const doneStatus = ROUND_DONE_STATUS[params.round];
   if (fromStatus === schedulingStatus && !params.scheduledTime) {
-    return { ok: false, error: "请先选择面试时间" };
+    if (feedback) {
+      return { ok: false, error: "请先确认面试时间后再提交评价" };
+    }
+    if (params.round === 1) {
+      return { ok: false, error: "请先选择初试时间" };
+    }
   }
 
   // upsert：每个候选人每轮仅一条记录
@@ -687,7 +701,7 @@ export async function rescheduleInterviewAction(params: {
   const newText = formatInterviewTimeBeijing(scheduledIso);
   const note = oldText
     ? `调整${roundLabel}时间 · ${oldText} → ${newText}`
-    : `调整${roundLabel}时间 · ${newText}`;
+    : `确认${roundLabel}时间 · ${newText}`;
 
   await writeLog({
     candidateId: params.candidateId,

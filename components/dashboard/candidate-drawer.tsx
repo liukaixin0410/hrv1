@@ -161,9 +161,18 @@ export function CandidateDrawer({
     setScheduleInterviewer("");
   }
 
+  /** 复试时间未定（等面试官档期）时先推进，scheduled_time 留空，稍后补录 */
+  async function confirmTentativeSchedule() {
+    if (!scheduleTarget || scheduleTarget.round !== 2) return;
+    await handleAdvance(scheduleTarget.to, null, scheduleInterviewer);
+    setScheduleTarget(null);
+    setScheduleTime("");
+    setScheduleInterviewer("");
+  }
+
   async function handleAdvance(
     to: CandidateStatus,
-    scheduledTime?: string,
+    scheduledTime?: string | null,
     interviewer?: string
   ) {
     if (!candidate) return;
@@ -463,12 +472,23 @@ export function CandidateDrawer({
         open={!!scheduleTarget}
         onClose={() => setScheduleTarget(null)}
         title={scheduleTarget?.round === 1 ? "安排初试时间" : "安排复试时间"}
-        description="必须先确认面试时间，该时间将同步出现在「面试日程表」中"
+        description={
+          scheduleTarget?.round === 1
+            ? "必须先确认初试时间，该时间将同步出现在「面试日程表」中"
+            : "可现在确认复试时间；若需等面试官档期，也可先推进，稍后在看板或日程表补录时间"
+        }
         className="max-w-sm"
       >
         <div className="space-y-4">
           <div>
-            <Label className="mb-1.5">面试时间</Label>
+            <Label className="mb-1.5">
+              面试时间
+              {scheduleTarget?.round === 2 && (
+                <span className="ml-1.5 text-xs font-normal text-amber-600">
+                  可暂定，稍后再确认
+                </span>
+              )}
+            </Label>
             <div className="relative">
               <CalendarClock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -511,19 +531,33 @@ export function CandidateDrawer({
               <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
           </div>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setScheduleTarget(null)}
-            >
-              取消
-            </Button>
-            <Button
-              onClick={confirmSchedule}
-              loading={busy === scheduleTarget?.to}
-            >
-              确认排期并推进
-            </Button>
+          <div className="flex items-center justify-between gap-2">
+            {scheduleTarget?.round === 2 ? (
+              <Button
+                variant="outline"
+                loading={busy === scheduleTarget.to}
+                onClick={confirmTentativeSchedule}
+                className="border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+              >
+                时间暂不确定，先推进
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setScheduleTarget(null)}
+              >
+                取消
+              </Button>
+              <Button
+                onClick={confirmSchedule}
+                loading={busy === scheduleTarget?.to}
+              >
+                确认排期并推进
+              </Button>
+            </div>
           </div>
         </div>
       </Modal>

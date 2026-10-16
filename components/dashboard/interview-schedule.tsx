@@ -48,7 +48,8 @@ interface ScheduleViewProps {
 interface ScheduleItem {
   candidate: Candidate;
   round: 1 | 2;
-  time: string; // ISO
+  /** ISO；null=时间暂定（待确认），只出现在“时间待确认”分区 */
+  time: string | null;
   interviewer: string | null;
 }
 
@@ -184,14 +185,43 @@ export function ScheduleView({
           return item.interviewer === null;
         return item.interviewer === interviewerFilter;
       })
-      .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+      .sort((a, b) => new Date(a.time!).getTime() - new Date(b.time!).getTime());
+  }, [candidates, interviewerFilter]);
+
+  /**
+   * 暂定条目：处于初/复试排期但未确认时间（当前业务上只有“复试暂定”）。
+   * 无法进入日历格，统一在顶部“时间待确认”分区提示并提供补录入口。
+   */
+  const pendingItems = useMemo<ScheduleItem[]>(() => {
+    return candidates
+      .flatMap((c) =>
+        (c.interviews ?? [])
+          .filter((i) => {
+            if (i.scheduled_time) return false;
+            const pendingStatus =
+              i.round === 1 ? "初试排期" : "复试排期";
+            return c.status === pendingStatus;
+          })
+          .map((i) => ({
+            candidate: c,
+            round: Number(i.round) as 1 | 2,
+            time: null,
+            interviewer: i.interviewer?.trim() || null,
+          }))
+      )
+      .filter((item) => {
+        if (interviewerFilter === INTERVIEWER_ALL) return true;
+        if (interviewerFilter === INTERVIEWER_NONE)
+          return item.interviewer === null;
+        return item.interviewer === interviewerFilter;
+      });
   }, [candidates, interviewerFilter]);
 
   // 日期 key -> 当日面试（items 已按时间升序）
   const itemsByDay = useMemo(() => {
     const map = new Map<string, ScheduleItem[]>();
     for (const item of items) {
-      const key = dateKey(new Date(item.time));
+      const key = dateKey(new Date(item.time!));
       const arr = map.get(key);
       if (arr) arr.push(item);
       else map.set(key, [item]);
@@ -337,26 +367,56 @@ export function ScheduleView({
         </div>
       </div>
 
-      {items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-white/60 py-20 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
-            <Inbox className="h-6 w-6 text-slate-400" />
+      {/* 时间待确认：已推进到排期但时间暂定的面试，列表/日历视图都置顶提示 */}
+      {pendingItems.length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3 shadow-sm sm:p-4">
+          <div className="mb-2.5 flex items-center gap-2">
+            <CalendarClock className="h-4 w-4 text-amber-500" />
+            <h3 className="text-sm font-semibold text-amber-800">
+              时间待确认
+              <span className="ml-1.5 text-xs font-normal text-amber-600">
+                {pendingItems.length} 场
+              </span>
+            </h3>
+            <span className="text-xs text-amber-600/80">
+              已推进流程但面试时间未定，确认时间后自动进入下方日程
+            </span>
           </div>
-          <div>
-            <p className="text-sm font-medium text-slate-600">
-              暂无待进行的面试安排
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              在候选人详情中推进到初试/复试并选择时间后，这里会自动出现
-            </p>
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+            {pendingItems.map((item) => (
+              <ScheduleRow
+                key={`pending-${item.candidate.id}-${item.round}`}
+                item={item}
+                onClick={() => openCandidate(item.candidate.id)}
+                onReschedule={() => openReschedule(item)}
+              />
+            ))}
           </div>
         </div>
+      )}
+
+      {items.length === 0 ? (
+        pendingItems.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-white/60 py-20 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
+              <Inbox className="h-6 w-6 text-slate-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-600">
+                暂无待进行的面试安排
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                在候选人详情中推进到初试/复试并选择时间后，这里会自动出现
+              </p>
+            </div>
+          </div>
+        ) : null
       ) : viewMode === "list" ? (
         /* ---------------- 列表视图（默认） ---------------- */
         <div className="space-y-5">
           {groups.map(([key, dayItems]) => {
-            const diff = dayDiff(dayItems[0].time);
-            const d = new Date(dayItems[0].time);
+            const diff = dayDiff(dayItems[0].time!);
+            const d = new Date(dayItems[0].time!);
             return (
               <div key={key}>
                 {/* 日期分组头 */}
@@ -486,7 +546,7 @@ export function ScheduleView({
 
                   <div className="flex flex-1 flex-col gap-0.5 overflow-hidden">
                     {visible.map((item) => {
-                      const t = new Date(item.time);
+                      const t = new Date(item.time!);
                       const hhmm = `${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
                       return (
                         <div
@@ -605,7 +665,9 @@ export function ScheduleView({
         onClose={() => (rescheduleSaving ? null : setRescheduleItem(null))}
         title={
           rescheduleItem
-            ? `修改${ROUND_LABEL[rescheduleItem.round]}时间`
+            ? `${rescheduleItem.time ? "修改" : "确认"}${
+                ROUND_LABEL[rescheduleItem.round]
+              }时间`
             : ""
         }
         description={
@@ -619,7 +681,9 @@ export function ScheduleView({
       >
         <div className="space-y-4">
           <div>
-            <Label className="mb-1.5">新的面试时间</Label>
+            <Label className="mb-1.5">
+              {rescheduleItem?.time ? "新的面试时间" : "面试时间"}
+            </Label>
             <div className="relative">
               <CalendarClock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -672,9 +736,10 @@ function ScheduleRow({
   onClick: () => void;
   onReschedule: () => void;
 }) {
-  const t = new Date(item.time);
-  const hh = pad2(t.getHours());
-  const mm = pad2(t.getMinutes());
+  const tentative = !item.time;
+  const t = item.time ? new Date(item.time) : null;
+  const hh = t ? pad2(t.getHours()) : "--";
+  const mm = t ? pad2(t.getMinutes()) : "--";
   return (
     <div
       role="button"
@@ -686,14 +751,25 @@ function ScheduleRow({
           onClick();
         }
       }}
-      className="group flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border border-slate-100 bg-white px-4 py-3.5 text-left card-soft transition hover:border-emerald-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+      className={cn(
+        "group flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border bg-white px-4 py-3.5 text-left card-soft transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200",
+        tentative
+          ? "border-amber-200 hover:border-amber-300 hover:shadow-md"
+          : "border-slate-100 hover:border-emerald-200 hover:shadow-md"
+      )}
     >
-      {/* 时间块 */}
-      <div className="flex w-12 shrink-0 flex-col items-center rounded-xl bg-slate-50 py-1.5">
-        <span className="text-base font-bold leading-tight text-slate-800">
-          {hh}:{mm}
-        </span>
-      </div>
+      {/* 时间块：暂定显示琥珀色时钟图标 */}
+      {tentative ? (
+        <div className="flex w-12 shrink-0 flex-col items-center justify-center self-stretch rounded-xl bg-amber-100 py-1.5">
+          <CalendarClock className="h-4 w-4 text-amber-600" />
+        </div>
+      ) : (
+        <div className="flex w-12 shrink-0 flex-col items-center rounded-xl bg-slate-50 py-1.5">
+          <span className="text-base font-bold leading-tight text-slate-800">
+            {hh}:{mm}
+          </span>
+        </div>
+      )}
       {/* 信息 */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -708,6 +784,11 @@ function ScheduleRow({
           >
             {ROUND_LABEL[item.round]}
           </span>
+          {tentative && (
+            <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-600">
+              时间暂定
+            </span>
+          )}
         </div>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">
           应聘岗位：{item.candidate.position?.title ?? "—"}
@@ -725,17 +806,22 @@ function ScheduleRow({
       </div>
       <button
         type="button"
-        aria-label={`修改${item.candidate.name}的面试时间`}
-        title="修改面试时间"
+        aria-label={`${tentative ? "确认" : "修改"}${item.candidate.name}的面试时间`}
+        title={tentative ? "确认面试时间" : "修改面试时间"}
         onClick={(e) => {
           e.stopPropagation();
           onReschedule();
         }}
         onKeyDown={(e) => e.stopPropagation()}
-        className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2 text-xs font-medium text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
+        className={cn(
+          "inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs font-medium transition",
+          tentative
+            ? "border-amber-300 text-amber-700 hover:bg-amber-100 hover:text-amber-800"
+            : "border-slate-200 text-slate-500 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
+        )}
       >
         <Pencil className="h-3 w-3" />
-        改期
+        {tentative ? "定时间" : "改期"}
       </button>
       <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-emerald-500" />
     </div>
