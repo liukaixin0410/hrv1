@@ -1,0 +1,6 @@
+[build]
+  command = "rm -rf .next && npm run build"
+  publish = ".next"
+
+[build.environment]
+  NEXT_DISABLE_CACHE = "1"
