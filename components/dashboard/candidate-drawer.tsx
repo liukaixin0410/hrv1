@@ -9,6 +9,7 @@ import {
   ExternalLink,
   FileText,
   History,
+  Trash2,
   UserCog,
   UserRound,
 } from "lucide-react";
@@ -19,7 +20,10 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { InterviewCard } from "./interview-card";
 import { Timeline } from "./timeline";
-import { advanceStatusAction } from "@/app/actions";
+import {
+  advanceStatusAction,
+  deleteCandidateAction,
+} from "@/app/actions";
 import {
   TERMINAL_STATUSES,
   nextStatus,
@@ -64,6 +68,8 @@ export function CandidateDrawer({
   const router = useRouter();
   const [busy, setBusy] = useState<CandidateStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   // 推进到初/复试时的强制排期弹窗
   const [scheduleTarget, setScheduleTarget] = useState<{
     to: CandidateStatus;
@@ -152,6 +158,25 @@ export function CandidateDrawer({
       return;
     }
     onOperatorChange(operatorName.trim());
+    router.refresh();
+  }
+
+  async function handleDelete() {
+    if (!candidate) return;
+    const ok = window.confirm(
+      `确认删除候选人「${candidate.name}」？\n\n将同时删除其简历文件、全部面试记录与流转历史，删除后不可恢复。\n如仅因简历传错，删除后可重新录入。`
+    );
+    if (!ok) return;
+    setDeleting(true);
+    setDeleteError(null);
+    const result = await deleteCandidateAction(candidate.id, operatorName);
+    if (!result.ok) {
+      setDeleting(false);
+      setDeleteError(result.error ?? "删除失败");
+      return;
+    }
+    onOperatorChange(operatorName.trim());
+    onClose();
     router.refresh();
   }
 
@@ -346,6 +371,33 @@ export function CandidateDrawer({
               </div>
             </div>
           </section>
+        </div>
+
+        {/* 危险区：删除候选人（简历传错等场景） */}
+        <div className="mt-6 flex flex-col gap-2 rounded-2xl border border-rose-100 bg-rose-50/50 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-rose-700">
+              <Trash2 className="h-4 w-4" />
+              删除候选人
+            </p>
+            <p className="mt-0.5 text-xs text-rose-600/80">
+              用于简历上传错误等情况；将一并删除简历文件、面试记录与流转历史，不可恢复。
+            </p>
+            {deleteError && (
+              <p className="mt-1 text-xs font-medium text-destructive">
+                {deleteError}
+              </p>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            loading={deleting}
+            onClick={handleDelete}
+            className="shrink-0 border-rose-200 text-rose-600 hover:bg-rose-100 hover:text-rose-700"
+          >
+            <Trash2 className="h-4 w-4" />
+            删除该候选人
+          </Button>
         </div>
       </div>
 

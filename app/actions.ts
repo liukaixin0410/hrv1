@@ -461,6 +461,68 @@ export async function advanceStatusAction(
 }
 
 // ---------------------------------------------------------------------
+// 删除候选人（简历传错等场景）
+// ---------------------------------------------------------------------
+
+/** 从 Storage 公开 URL 中解析 resumes 桶内对象路径 */
+function resumePathFromUrl(url: string): string | null {
+  const marker = "/storage/v1/object/public/resumes/";
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  try {
+    return decodeURIComponent(url.slice(idx + marker.length).split("?")[0]);
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteCandidateAction(
+  candidateId: string,
+  operatorName: string
+): Promise<ActionResult> {
+  await requireSession();
+
+  const sb = getSupabase();
+  const { data: candidate, error: fetchError } = await sb
+    .from("candidates")
+    .select("id, name, resume_url")
+    .eq("id", candidateId)
+    .maybeSingle();
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!candidate) return { ok: false, error: "候选人不存在" };
+
+  // 先删除 Storage 中的简历文件，失败则中止（避免产生无法追踪的孤儿文件）
+  if (candidate.resume_url) {
+    const path = resumePathFromUrl(candidate.resume_url);
+    if (path) {
+      const { error: storageError } = await sb.storage
+        .from("resumes")
+        .remove([path]);
+      if (storageError) {
+        return {
+          ok: false,
+          error: `简历文件删除失败：${storageError.message}`,
+        };
+      }
+    }
+  }
+
+  // interviews / candidate_status_logs 均为 on delete cascade
+  const { error: delError } = await sb
+    .from("candidates")
+    .delete()
+    .eq("id", candidateId);
+  if (delError) return { ok: false, error: delError.message };
+
+  console.info(
+    `[deleteCandidate] ${operatorName.trim() || "未知操作人"} 删除候选人 ${candidate.name}（${candidateId}）`
+  );
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------
 // 面试记录
 // ---------------------------------------------------------------------
 
@@ -555,6 +617,78 @@ export async function saveInterviewAction(params: {
       operatorName,
     });
   }
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+/**
+ * 修改已安排的面试时间（改期）。
+ * 仅允许候选人当前仍处于对应轮次的“排期”状态；评价/面试官等其它字段不动。
+ */
+export async function rescheduleInterviewAction(params: {
+  candidateId: string;
+  round: 1 | 2;
+  scheduledTime: string;
+  operatorName: string;
+}): Promise<ActionResult> {
+  await requireSession();
+
+  const parsed = new Date(params.scheduledTime);
+  if (Number.isNaN(parsed.getTime())) {
+    return { ok: false, error: "面试时间格式不正确" };
+  }
+  const scheduledIso = parsed.toISOString();
+
+  const sb = getSupabase();
+  const { data: candidate, error: fetchError } = await sb
+    .from("candidates")
+    .select("id, name, status")
+    .eq("id", params.candidateId)
+    .maybeSingle();
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!candidate) return { ok: false, error: "候选人不存在" };
+
+  const schedulingStatus: CandidateStatus =
+    params.round === 1 ? "初试排期" : "复试排期";
+  if (candidate.status !== schedulingStatus) {
+    return {
+      ok: false,
+      error: "该面试已不在待进行状态，不能修改时间",
+    };
+  }
+
+  const { data: interview } = await sb
+    .from("interviews")
+    .select("id, scheduled_time")
+    .eq("candidate_id", params.candidateId)
+    .eq("round", params.round)
+    .maybeSingle();
+  if (!interview) return { ok: false, error: "面试记录不存在" };
+
+  const { error: updError } = await sb
+    .from("interviews")
+    .update({
+      scheduled_time: scheduledIso,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", interview.id);
+  if (updError) return { ok: false, error: updError.message };
+
+  const roundLabel = params.round === 1 ? "初试" : "复试";
+  const oldText = formatInterviewTimeBeijing(interview.scheduled_time);
+  const newText = formatInterviewTimeBeijing(scheduledIso);
+  const note = oldText
+    ? `调整${roundLabel}时间 · ${oldText} → ${newText}`
+    : `调整${roundLabel}时间 · ${newText}`;
+
+  await writeLog({
+    candidateId: params.candidateId,
+    fromStatus: candidate.status as CandidateStatus,
+    toStatus: candidate.status as CandidateStatus,
+    note,
+    operatorName: params.operatorName.trim() || null,
+  });
 
   revalidatePath("/");
   return { ok: true };

@@ -299,6 +299,8 @@ export function Workbench({
             interviewerFilter={interviewerFilter}
             onInterviewerFilterChange={setInterviewerFilter}
             onSelect={(id) => setSelectedId(id)}
+            operatorName={operatorName}
+            onOperatorChange={setOperatorName}
           />
         </div>
       )}

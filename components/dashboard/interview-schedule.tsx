@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   CalendarClock,
   CalendarDays,
@@ -9,6 +10,7 @@ import {
   Filter,
   Inbox,
   List,
+  Pencil,
   Settings2,
   UserCog,
 } from "lucide-react";
@@ -18,10 +20,13 @@ import {
   ROUND_DOT_CLASS,
   ROUND_LABEL,
 } from "@/lib/constants";
-import { cn } from "@/lib/utils";
+import { cn, toLocalInputValue } from "@/lib/utils";
 import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { FilterSelect } from "./filter-select";
 import { InterviewerManageDialog } from "./interviewer-manage-dialog";
+import { rescheduleInterviewAction } from "@/app/actions";
 
 interface ScheduleViewProps {
   /** 已按岗位/面试官筛选后的候选人（日程条目从此派生） */
@@ -35,6 +40,9 @@ interface ScheduleViewProps {
   interviewerFilter: string;
   onInterviewerFilterChange: (v: string) => void;
   onSelect: (candidateId: string) => void;
+  /** 操作人签名（改期日志用） */
+  operatorName: string;
+  onOperatorChange: (v: string) => void;
 }
 
 interface ScheduleItem {
@@ -107,13 +115,23 @@ export function ScheduleView({
   interviewerFilter,
   onInterviewerFilterChange,
   onSelect,
+  operatorName,
+  onOperatorChange,
 }: ScheduleViewProps) {
+  const router = useRouter();
   const [manageOpen, setManageOpen] = useState(false);
   const [viewMode, setViewModeState] = useState<ViewMode>(readInitialView);
   // 日历当前查看的月份
   const [cursor, setCursor] = useState<Date>(startOfToday());
   // 日历格「+N 场」点开的当日清单
   const [dayModalKey, setDayModalKey] = useState<string | null>(null);
+  // 改期弹窗
+  const [rescheduleItem, setRescheduleItem] = useState<ScheduleItem | null>(
+    null
+  );
+  const [rescheduleValue, setRescheduleValue] = useState("");
+  const [rescheduleSaving, setRescheduleSaving] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
 
   function setViewMode(mode: ViewMode) {
     setViewModeState(mode);
@@ -216,6 +234,40 @@ export function ScheduleView({
   function openCandidate(candidateId: string) {
     setDayModalKey(null);
     onSelect(candidateId);
+  }
+
+  function openReschedule(item: ScheduleItem) {
+    setRescheduleItem(item);
+    setRescheduleValue(toLocalInputValue(item.time));
+    setRescheduleError(null);
+  }
+
+  async function confirmReschedule() {
+    if (!rescheduleItem) return;
+    if (!rescheduleValue) {
+      setRescheduleError("请选择新的面试时间");
+      return;
+    }
+    if (Number.isNaN(new Date(rescheduleValue).getTime())) {
+      setRescheduleError("面试时间格式不正确");
+      return;
+    }
+    setRescheduleSaving(true);
+    setRescheduleError(null);
+    const result = await rescheduleInterviewAction({
+      candidateId: rescheduleItem.candidate.id,
+      round: rescheduleItem.round,
+      scheduledTime: rescheduleValue,
+      operatorName,
+    });
+    setRescheduleSaving(false);
+    if (!result.ok) {
+      setRescheduleError(result.error ?? "改期失败");
+      return;
+    }
+    onOperatorChange(operatorName.trim());
+    setRescheduleItem(null);
+    router.refresh();
   }
 
   return (
@@ -335,6 +387,7 @@ export function ScheduleView({
                       key={`${item.candidate.id}-${item.round}`}
                       item={item}
                       onClick={() => openCandidate(item.candidate.id)}
+                      onReschedule={() => openReschedule(item)}
                     />
                   ))}
                 </div>
@@ -436,13 +489,20 @@ export function ScheduleView({
                       const t = new Date(item.time);
                       const hhmm = `${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
                       return (
-                        <button
+                        <div
                           key={`${item.candidate.id}-${item.round}`}
-                          type="button"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => openCandidate(item.candidate.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openCandidate(item.candidate.id);
+                            }
+                          }}
                           title={`${hhmm} ${item.candidate.name} · ${ROUND_LABEL[item.round]} · ${item.candidate.position?.title ?? "未知岗位"} · ${item.interviewer ?? "未分配面试官"}`}
                           className={cn(
-                            "flex w-full items-center gap-1 rounded-md px-1 py-0.5 text-left text-[11px] leading-4 transition hover:bg-emerald-50",
+                            "group flex w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left text-[11px] leading-4 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200",
                             cell.inMonth ? "" : "opacity-60"
                           )}
                         >
@@ -469,7 +529,19 @@ export function ScheduleView({
                               className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"
                             />
                           )}
-                        </button>
+                          <button
+                            type="button"
+                            aria-label={`修改${item.candidate.name}的面试时间`}
+                            title="修改面试时间"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openReschedule(item);
+                            }}
+                            className="ml-auto hidden shrink-0 rounded p-0.5 text-slate-400 hover:bg-emerald-100 hover:text-emerald-600 group-hover:block"
+                          >
+                            <Pencil className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
                       );
                     })}
                     {hiddenCount > 0 && (
@@ -518,8 +590,66 @@ export function ScheduleView({
               key={`${item.candidate.id}-${item.round}`}
               item={item}
               onClick={() => openCandidate(item.candidate.id)}
+              onReschedule={() => {
+                setDayModalKey(null);
+                openReschedule(item);
+              }}
             />
           ))}
+        </div>
+      </Modal>
+
+      {/* 修改面试时间 */}
+      <Modal
+        open={!!rescheduleItem}
+        onClose={() => (rescheduleSaving ? null : setRescheduleItem(null))}
+        title={
+          rescheduleItem
+            ? `修改${ROUND_LABEL[rescheduleItem.round]}时间`
+            : ""
+        }
+        description={
+          rescheduleItem
+            ? `${rescheduleItem.candidate.name} · ${
+                rescheduleItem.candidate.position?.title ?? "未知岗位"
+              }`
+            : undefined
+        }
+        className="max-w-sm"
+      >
+        <div className="space-y-4">
+          <div>
+            <Label className="mb-1.5">新的面试时间</Label>
+            <div className="relative">
+              <CalendarClock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="datetime-local"
+                value={rescheduleValue}
+                onChange={(e) => {
+                  setRescheduleValue(e.target.value);
+                  setRescheduleError(null);
+                }}
+                className="flex h-10 w-full rounded-xl border border-input bg-white pl-9 pr-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              />
+            </div>
+            {rescheduleError && (
+              <p className="mt-1.5 text-xs text-destructive">
+                {rescheduleError}
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              disabled={rescheduleSaving}
+              onClick={() => setRescheduleItem(null)}
+            >
+              取消
+            </Button>
+            <Button onClick={confirmReschedule} loading={rescheduleSaving}>
+              确认修改
+            </Button>
+          </div>
         </div>
       </Modal>
 
@@ -536,18 +666,27 @@ export function ScheduleView({
 function ScheduleRow({
   item,
   onClick,
+  onReschedule,
 }: {
   item: ScheduleItem;
   onClick: () => void;
+  onReschedule: () => void;
 }) {
   const t = new Date(item.time);
   const hh = pad2(t.getHours());
   const mm = pad2(t.getMinutes());
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="group flex w-full items-center gap-3.5 rounded-2xl border border-slate-100 bg-white px-4 py-3.5 text-left card-soft transition hover:border-emerald-200 hover:shadow-md"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className="group flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border border-slate-100 bg-white px-4 py-3.5 text-left card-soft transition hover:border-emerald-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
     >
       {/* 时间块 */}
       <div className="flex w-12 shrink-0 flex-col items-center rounded-xl bg-slate-50 py-1.5">
@@ -584,8 +723,22 @@ function ScheduleRow({
           )}
         </p>
       </div>
+      <button
+        type="button"
+        aria-label={`修改${item.candidate.name}的面试时间`}
+        title="修改面试时间"
+        onClick={(e) => {
+          e.stopPropagation();
+          onReschedule();
+        }}
+        onKeyDown={(e) => e.stopPropagation()}
+        className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2 text-xs font-medium text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
+      >
+        <Pencil className="h-3 w-3" />
+        改期
+      </button>
       <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-emerald-500" />
-    </button>
+    </div>
   );
 }
 
