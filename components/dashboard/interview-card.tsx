@@ -80,7 +80,7 @@ export function InterviewCard({
     router.refresh();
   }
 
-  // 排期中但时间未定（复试暂定）：允许先保存面试官，时间待确认
+  // 排期中但时间未定（时间暂定，初/复试同理）：允许先保存面试官，时间待确认
   const tentative = !readOnly && !interview?.scheduled_time;
 
   const accent = round === 1 ? "sky" : "blue";

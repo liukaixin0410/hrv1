@@ -189,7 +189,7 @@ export function ScheduleView({
   }, [candidates, interviewerFilter]);
 
   /**
-   * 暂定条目：处于初/复试排期但未确认时间（当前业务上只有“复试暂定”）。
+   * 暂定条目：处于初/复试排期但未确认时间（时间还需与面试官商议）。
    * 无法进入日历格，统一在顶部“时间待确认”分区提示并提供补录入口。
    */
   const pendingItems = useMemo<ScheduleItem[]>(() => {

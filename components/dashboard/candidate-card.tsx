@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import {
+  ROUND_LABEL,
   SCHEDULING_STATUSES,
   statusBadgeClass,
   TERMINAL_STATUSES,
@@ -60,14 +61,12 @@ export function CandidateCard({
   const rescheduleInterview = candidate.interviews?.find(
     (i) => Number(i.round) === rescheduleRound
   );
-  // 暂定：已推进到复试排期但时间未定（等面试官档期），初试不支持暂定
+  // 暂定：已推进到初/复试排期但时间未定（还需与面试官商议），稍后补录
   const tentative =
-    canReschedule &&
-    rescheduleRound === 2 &&
-    !rescheduleInterview?.scheduled_time;
+    canReschedule && !rescheduleInterview?.scheduled_time;
 
   // 卡片展示时间：优先“下一场未来面试”，避免复试排期时误显已过的初试时间；
-  // 流程结束时展示最近一场（历史时间）；暂定复试不显示时间，改由暂定 chip 提示
+  // 流程结束时展示最近一场（历史时间）；暂定态不显示时间，改由暂定 chip 提示
   const nowTs = Date.now();
   const sortedScheduled =
     candidate.interviews
@@ -183,10 +182,10 @@ export function CandidateCard({
           {tentative && (
             <span
               className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-600"
-              title="复试时间待确认，请与面试官确认后点击「定时间」补录"
+              title={`${ROUND_LABEL[rescheduleRound]}时间待确认，请与面试官确认后点击「定时间」补录`}
             >
               <CalendarClock className="h-3 w-3" />
-              复试时间暂定
+              {ROUND_LABEL[rescheduleRound]}时间暂定
             </span>
           )}
           {upcoming && (
