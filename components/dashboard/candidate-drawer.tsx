@@ -70,6 +70,14 @@ export function CandidateDrawer({
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // 通用二次确认弹窗（删除 / 面试通过 / 面试不通过 等危险操作）
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    confirmText?: string;
+    destructive?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
   // 推进到初/复试时的强制排期弹窗
   const [scheduleTarget, setScheduleTarget] = useState<{
     to: CandidateStatus;
@@ -96,6 +104,7 @@ export function CandidateDrawer({
   const next = nextStatus(candidate.status);
 
   function openAdvance(to: CandidateStatus) {
+    if (!candidate) return;
     if (to === "初试排期" || to === "复试排期") {
       const round: 1 | 2 = to === "初试排期" ? 1 : 2;
       // 默认带出已存的面试时间
@@ -109,6 +118,21 @@ export function CandidateDrawer({
       setScheduleInterviewer(existing?.interviewer ?? "");
       setScheduleError(null);
       setScheduleTarget({ to, round });
+    } else if (to === "面试不通过") {
+      setConfirmDialog({
+        title: `将「${candidate.name}」标记为面试不通过？`,
+        message: "标记后流程结束，该候选人将进入「面试不通过」列。",
+        confirmText: "确认不通过",
+        destructive: true,
+        onConfirm: () => handleAdvance(to),
+      });
+    } else if (to === "面试通过") {
+      setConfirmDialog({
+        title: `确认「${candidate.name}」面试通过？`,
+        message: "确认后流程结束，该候选人将进入「面试通过」列。",
+        confirmText: "确认通过",
+        onConfirm: () => handleAdvance(to),
+      });
     } else {
       void handleAdvance(to);
     }
@@ -135,14 +159,6 @@ export function CandidateDrawer({
     interviewer?: string
   ) {
     if (!candidate) return;
-    if (
-      (to === "面试不通过" &&
-        !window.confirm(`确认将「${candidate.name}」标记为面试不通过？`)) ||
-      (to === "面试通过" &&
-        !window.confirm(`确认「${candidate.name}」面试通过？`))
-    ) {
-      return;
-    }
     setBusy(to);
     setError(null);
     const result = await advanceStatusAction(
@@ -161,20 +177,31 @@ export function CandidateDrawer({
     router.refresh();
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!candidate) return;
-    const ok = window.confirm(
-      `确认删除候选人「${candidate.name}」？\n\n将同时删除其简历文件、全部面试记录与流转历史，删除后不可恢复。\n如仅因简历传错，删除后可重新录入。`
-    );
-    if (!ok) return;
+    setDeleteError(null);
+    setConfirmDialog({
+      title: `删除候选人「${candidate.name}」？`,
+      message:
+        "将同时删除其简历文件、全部面试记录与流转历史，删除后不可恢复。如仅因简历传错，删除后可重新录入。",
+      confirmText: "确认删除",
+      destructive: true,
+      onConfirm: confirmDelete,
+    });
+  }
+
+  async function confirmDelete() {
+    if (!candidate) return;
     setDeleting(true);
     setDeleteError(null);
     const result = await deleteCandidateAction(candidate.id, operatorName);
     if (!result.ok) {
       setDeleting(false);
       setDeleteError(result.error ?? "删除失败");
+      setConfirmDialog(null);
       return;
     }
+    setConfirmDialog(null);
     onOperatorChange(operatorName.trim());
     onClose();
     router.refresh();
@@ -468,6 +495,35 @@ export function CandidateDrawer({
               确认排期并推进
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* 通用二次确认弹窗 */}
+      <Modal
+        open={!!confirmDialog}
+        onClose={() => !deleting && !busy && setConfirmDialog(null)}
+        title={confirmDialog?.title ?? ""}
+        description={confirmDialog?.message}
+        className="max-w-sm"
+      >
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            disabled={!!deleting || !!busy}
+            onClick={() => setConfirmDialog(null)}
+          >
+            取消
+          </Button>
+          <Button
+            variant={confirmDialog?.destructive ? "destructive" : "default"}
+            loading={
+              !!((confirmDialog?.destructive && deleting) ||
+                (confirmDialog && busy))
+            }
+            onClick={() => confirmDialog?.onConfirm()}
+          >
+            {confirmDialog?.confirmText ?? "确认"}
+          </Button>
         </div>
       </Modal>
     </Sheet>
