@@ -482,44 +482,51 @@ export async function deleteCandidateAction(
 ): Promise<ActionResult> {
   await requireSession();
 
-  const sb = getSupabase();
-  const { data: candidate, error: fetchError } = await sb
-    .from("candidates")
-    .select("id, name, resume_url")
-    .eq("id", candidateId)
-    .maybeSingle();
-  if (fetchError) return { ok: false, error: fetchError.message };
-  if (!candidate) return { ok: false, error: "候选人不存在" };
+  try {
+    const sb = getSupabase();
+    const { data: candidate, error: fetchError } = await sb
+      .from("candidates")
+      .select("id, name, resume_url")
+      .eq("id", candidateId)
+      .maybeSingle();
+    if (fetchError) return { ok: false, error: fetchError.message };
+    if (!candidate) return { ok: false, error: "候选人不存在" };
 
-  // 先删除 Storage 中的简历文件，失败则中止（避免产生无法追踪的孤儿文件）
-  if (candidate.resume_url) {
-    const path = resumePathFromUrl(candidate.resume_url);
-    if (path) {
-      const { error: storageError } = await sb.storage
-        .from("resumes")
-        .remove([path]);
-      if (storageError) {
-        return {
-          ok: false,
-          error: `简历文件删除失败：${storageError.message}`,
-        };
+    // 先删除 Storage 中的简历文件，失败则中止（避免产生无法追踪的孤儿文件）
+    if (candidate.resume_url) {
+      const path = resumePathFromUrl(candidate.resume_url);
+      if (path) {
+        const { error: storageError } = await sb.storage
+          .from("resumes")
+          .remove([path]);
+        if (storageError) {
+          return {
+            ok: false,
+            error: `简历文件删除失败：${storageError.message}`,
+          };
+        }
       }
     }
+
+    // interviews / candidate_status_logs 均为 on delete cascade
+    const { error: delError } = await sb
+      .from("candidates")
+      .delete()
+      .eq("id", candidateId);
+    if (delError) return { ok: false, error: delError.message };
+
+    console.info(
+      `[deleteCandidate] ${operatorName.trim() || "未知操作人"} 删除候选人 ${candidate.name}（${candidateId}）`
+    );
+
+    revalidatePath("/");
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "删除失败，请稍后重试",
+    };
   }
-
-  // interviews / candidate_status_logs 均为 on delete cascade
-  const { error: delError } = await sb
-    .from("candidates")
-    .delete()
-    .eq("id", candidateId);
-  if (delError) return { ok: false, error: delError.message };
-
-  console.info(
-    `[deleteCandidate] ${operatorName.trim() || "未知操作人"} 删除候选人 ${candidate.name}（${candidateId}）`
-  );
-
-  revalidatePath("/");
-  return { ok: true };
 }
 
 // ---------------------------------------------------------------------

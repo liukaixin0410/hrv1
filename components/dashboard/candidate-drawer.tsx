@@ -194,17 +194,25 @@ export function CandidateDrawer({
     if (!candidate) return;
     setDeleting(true);
     setDeleteError(null);
-    const result = await deleteCandidateAction(candidate.id, operatorName);
-    if (!result.ok) {
-      setDeleting(false);
-      setDeleteError(result.error ?? "删除失败");
+    try {
+      const result = await deleteCandidateAction(candidate.id, operatorName);
+      if (!result.ok) {
+        setDeleteError(result.error ?? "删除失败");
+        setConfirmDialog(null);
+        return;
+      }
       setConfirmDialog(null);
-      return;
+      onOperatorChange(operatorName.trim());
+      onClose();
+      router.refresh();
+    } catch (e) {
+      setDeleteError(
+        e instanceof Error ? e.message : "删除失败，请稍后重试"
+      );
+      setConfirmDialog(null);
+    } finally {
+      setDeleting(false);
     }
-    setConfirmDialog(null);
-    onOperatorChange(operatorName.trim());
-    onClose();
-    router.refresh();
   }
 
   const kind = resumeKind(candidate.resume_url);
