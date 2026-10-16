@@ -11,7 +11,7 @@ import {
   createSessionToken,
   verifySessionToken,
 } from "@/lib/auth";
-import { MAX_RESUME_SIZE, ROUND_DONE_STATUS } from "@/lib/constants";
+import { MAX_RESUME_SIZE } from "@/lib/constants";
 import { formatInterviewTimeBeijing } from "@/lib/utils";
 import { CANDIDATE_STATUSES, type CandidateStatus } from "@/lib/types";
 
@@ -542,6 +542,8 @@ export async function saveInterviewAction(params: {
   interviewer?: string;
   feedback: string;
   operatorName: string;
+  /** 本轮结论：pass=通过（自动进入下一轮/面试通过），fail=不通过（流程结束）；不传=仅暂存 */
+  decision?: "pass" | "fail";
 }): Promise<ActionResult> {
   await requireSession();
 
@@ -560,11 +562,18 @@ export async function saveInterviewAction(params: {
 
   // 排期状态下的时间校验（初/复试规则一致）：
   // - 时间暂定时允许只保存面试官等信息；
-  // - 但提交评价推进到“完成”前，必须先确认面试时间
+  // - 给出通过/不通过结论、或提交评价前，必须先确认面试时间
   const schedulingStatus: CandidateStatus =
     params.round === 1 ? "初试排期" : "复试排期";
-  const doneStatus = ROUND_DONE_STATUS[params.round];
-  if (fromStatus === schedulingStatus && !params.scheduledTime && feedback) {
+  const isActiveRound = fromStatus === schedulingStatus;
+
+  if (params.decision && !isActiveRound) {
+    return { ok: false, error: "当前状态不允许该操作" };
+  }
+  if (params.decision && !params.scheduledTime) {
+    return { ok: false, error: "请先确认面试时间后再给出面试结论" };
+  }
+  if (!params.decision && isActiveRound && !params.scheduledTime && feedback) {
     return { ok: false, error: "请先确认面试时间后再提交评价" };
   }
 
@@ -599,32 +608,76 @@ export async function saveInterviewAction(params: {
     if (error) return { ok: false, error: error.message };
   }
 
-  // 填写了评价且当前处于对应“排期”状态 -> 推进到“完成”
+  const roundLabel = params.round === 1 ? "初试" : "复试";
 
-  if (feedback && fromStatus === schedulingStatus) {
+  if (params.decision === "fail") {
+    // 不通过：流程结束
     const { error } = await sb
       .from("candidates")
-      .update({ status: doneStatus })
+      .update({ status: "面试不通过" })
       .eq("id", params.candidateId);
     if (error) return { ok: false, error: error.message };
 
     await writeLog({
       candidateId: params.candidateId,
       fromStatus,
-      toStatus: doneStatus,
-      note: (() => {
-        const base = `提交${params.round === 1 ? "初试" : "复试"}评价`;
-        const localText = formatInterviewTimeBeijing(params.scheduledTime);
-        return localText ? `${base}（${localText}）` : base;
-      })(),
+      toStatus: "面试不通过",
+      note: `${roundLabel}不通过，流程结束`,
       operatorName,
     });
+  } else if (params.decision === "pass") {
+    if (params.round === 1) {
+      // 初试通过：自动进入复试排期，并创建一条时间暂定的复试记录
+      const { data: round2 } = await sb
+        .from("interviews")
+        .select("id")
+        .eq("candidate_id", params.candidateId)
+        .eq("round", 2)
+        .maybeSingle();
+      if (!round2) {
+        const { error: insertError } = await sb.from("interviews").insert({
+          candidate_id: params.candidateId,
+          round: 2,
+          scheduled_time: null,
+        });
+        if (insertError) return { ok: false, error: insertError.message };
+      }
+      const { error } = await sb
+        .from("candidates")
+        .update({ status: "复试排期" })
+        .eq("id", params.candidateId);
+      if (error) return { ok: false, error: error.message };
+
+      await writeLog({
+        candidateId: params.candidateId,
+        fromStatus,
+        toStatus: "复试排期",
+        note: "初试通过，进入复试（时间待确认）",
+        operatorName,
+      });
+    } else {
+      // 复试通过：面试整体通过，流程结束
+      const { error } = await sb
+        .from("candidates")
+        .update({ status: "面试通过" })
+        .eq("id", params.candidateId);
+      if (error) return { ok: false, error: error.message };
+
+      await writeLog({
+        candidateId: params.candidateId,
+        fromStatus,
+        toStatus: "面试通过",
+        note: "复试通过，面试结束",
+        operatorName,
+      });
+    }
   } else {
+    // 未给结论：仅暂存本轮安排/评价，不改变状态
     await writeLog({
       candidateId: params.candidateId,
       fromStatus,
       toStatus: fromStatus,
-      note: `更新${params.round === 1 ? "初试" : "复试"}安排`,
+      note: `更新${roundLabel}安排`,
       operatorName,
     });
   }

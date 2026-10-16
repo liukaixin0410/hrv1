@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, ChevronDown, MessageSquareText, UserCog } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, MessageSquareText, UserCog, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +17,10 @@ interface InterviewCardProps {
   interview?: Interview;
   /** 流程已结束（面试通过/不通过）时只读 */
   readOnly: boolean;
+  /** 本轮正是候选人当前所处的轮次：展示通过/不通过结论按钮 */
+  active?: boolean;
+  /** 不通过前的二次确认（由抽屉提供应用内弹窗），返回用户是否确认 */
+  confirmFail?: () => Promise<boolean>;
   operatorName: string;
   onOperatorChange: (v: string) => void;
   /** 面试官名册姓名 */
@@ -28,6 +32,8 @@ export function InterviewCard({
   round,
   interview,
   readOnly,
+  active = false,
+  confirmFail,
   operatorName,
   onOperatorChange,
   interviewerNames = [],
@@ -38,7 +44,9 @@ export function InterviewCard({
   const [feedback, setFeedback] = useState("");
   const [operator, setOperator] = useState(operatorName);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [busyKind, setBusyKind] = useState<"save" | "pass" | "fail" | null>(
+    null
+  );
 
   // 服务端数据刷新后同步表单
   useEffect(() => {
@@ -55,29 +63,44 @@ export function InterviewCard({
     interview?.operator_name,
   ]);
 
-  async function handleSave() {
+  async function submit(kind: "save" | "pass" | "fail") {
     setError(null);
     const iso = scheduled ? new Date(scheduled).toISOString() : null;
     if (scheduled && Number.isNaN(new Date(scheduled).getTime())) {
       setError("面试时间格式不正确");
       return;
     }
-    setSaving(true);
-    const result = await saveInterviewAction({
-      candidateId,
-      round,
-      scheduledTime: iso,
-      interviewer,
-      feedback,
-      operatorName: operator,
-    });
-    setSaving(false);
-    if (!result.ok) {
-      setError(result.error ?? "保存失败");
+    // 给出通过/不通过结论前，必须先确认面试时间
+    if (kind !== "save" && !scheduled) {
+      setError("请先确认面试时间后再给出面试结论");
       return;
     }
-    onOperatorChange(operator.trim());
-    router.refresh();
+    if (kind === "fail" && confirmFail) {
+      const confirmed = await confirmFail();
+      if (!confirmed) return;
+    }
+    setBusyKind(kind);
+    try {
+      const result = await saveInterviewAction({
+        candidateId,
+        round,
+        scheduledTime: iso,
+        interviewer,
+        feedback,
+        operatorName: operator,
+        decision: kind === "save" ? undefined : kind,
+      });
+      if (!result.ok) {
+        setError(result.error ?? "保存失败");
+        return;
+      }
+      onOperatorChange(operator.trim());
+      router.refresh();
+    } catch {
+      setError("网络异常，保存未成功，请检查连接后重试");
+    } finally {
+      setBusyKind(null);
+    }
   }
 
   // 排期中但时间未定（时间暂定，初/复试同理）：允许先保存面试官，时间待确认
@@ -183,7 +206,7 @@ export function InterviewCard({
             value={feedback}
             disabled={readOnly}
             onChange={(e) => setFeedback(e.target.value)}
-            placeholder={`填写${ROUND_LABEL[round]}评价后保存，状态将自动推进到「${ROUND_LABEL[round]}完成」`}
+            placeholder={`填写${ROUND_LABEL[round]}评价（可选）；点「通过」${round === 1 ? "自动进入复试" : "即录用通过"}，点「不通过」结束流程`}
             rows={4}
           />
         </div>
@@ -208,13 +231,54 @@ export function InterviewCard({
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        {!readOnly && (
-          <div className="flex justify-end">
-            <Button size="sm" onClick={handleSave} loading={saving}>
-              保存{ROUND_LABEL[round]}记录
-            </Button>
-          </div>
-        )}
+        {!readOnly &&
+          (active ? (
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                disabled={busyKind !== null}
+                loading={busyKind === "save"}
+                onClick={() => void submit("save")}
+              >
+                暂存
+              </Button>
+              <div className="flex-1" />
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                disabled={busyKind !== null}
+                loading={busyKind === "fail"}
+                onClick={() => void submit("fail")}
+              >
+                <X className="h-4 w-4" />
+                不通过
+              </Button>
+              <Button
+                variant="success"
+                size="sm"
+                disabled={busyKind !== null}
+                loading={busyKind === "pass"}
+                onClick={() => void submit("pass")}
+              >
+                <Check className="h-4 w-4" />
+                {round === 1 ? "通过，进入复试" : "面试通过"}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                disabled={busyKind !== null}
+                loading={busyKind === "save"}
+                onClick={() => void submit("save")}
+              >
+                保存{ROUND_LABEL[round]}记录
+              </Button>
+            </div>
+          ))}
       </div>
     </div>
   );

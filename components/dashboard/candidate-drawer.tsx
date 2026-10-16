@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CalendarClock,
@@ -31,6 +31,7 @@ import {
   statusBadgeClass,
 } from "@/lib/constants";
 import {
+  cn,
   formatDateTime,
   resumeKind,
   toLocalInputValue,
@@ -81,6 +82,8 @@ export function CandidateDrawer({
     destructive?: boolean;
     onConfirm: () => void;
   } | null>(null);
+  // 面试卡片内「不通过」按钮的确认结果回调（应用内弹窗 -> Promise 桥接）
+  const failResolveRef = useRef<((ok: boolean) => void) | null>(null);
   // 推进到初/复试时的强制排期弹窗
   const [scheduleTarget, setScheduleTarget] = useState<{
     to: CandidateStatus;
@@ -110,6 +113,13 @@ export function CandidateDrawer({
   const showRound2 = statusIdx >= CANDIDATE_STATUSES.indexOf("复试排期");
   const isTerminal = TERMINAL_STATUSES.includes(candidate.status);
   const next = nextStatus(candidate.status);
+  // 候选人当前正处于哪一轮排期：该轮卡片内提供通过/不通过结论
+  const activeRound: 1 | 2 | null =
+    candidate.status === "初试排期"
+      ? 1
+      : candidate.status === "复试排期"
+        ? 2
+        : null;
 
   function openAdvance(to: CandidateStatus) {
     if (!candidate) return;
@@ -192,6 +202,35 @@ export function CandidateDrawer({
     }
     onOperatorChange(operatorName.trim());
     router.refresh();
+  }
+
+  /** 面试卡片点击「不通过」时弹出确认，返回用户是否确认 */
+  function confirmInterviewFail(): Promise<boolean> {
+    if (!candidate) return Promise.resolve(false);
+    const roundLabel = candidate.status === "复试排期" ? "复试" : "初试";
+    return new Promise<boolean>((resolve) => {
+      failResolveRef.current = resolve;
+      setConfirmDialog({
+        title: `确认本轮${roundLabel}不通过？`,
+        message:
+          "标记后流程结束，该候选人将进入「面试不通过」列，本轮面试评价仍会保留。",
+        confirmText: "确认不通过",
+        destructive: true,
+        onConfirm: () => {
+          failResolveRef.current?.(true);
+          failResolveRef.current = null;
+          setConfirmDialog(null);
+        },
+      });
+    });
+  }
+
+  /** 关闭确认弹窗；若等待中的是「不通过」确认，视为取消 */
+  function closeConfirm() {
+    if (deleting || busy) return;
+    failResolveRef.current?.(false);
+    failResolveRef.current = null;
+    setConfirmDialog(null);
   }
 
   function handleDelete() {
@@ -385,16 +424,20 @@ export function CandidateDrawer({
                       {next.label}
                     </Button>
                   )}
-                  <Button
-                    variant="outline"
-                    loading={busy === "面试不通过"}
-                    onClick={() => handleAdvance("面试不通过")}
-                    className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                  >
-                    不通过
-                  </Button>
+                  {activeRound === null && (
+                    <Button
+                      variant="outline"
+                      loading={busy === "面试不通过"}
+                      onClick={() => openAdvance("面试不通过")}
+                      className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                    >
+                      不通过
+                    </Button>
+                  )}
                   <span className="text-xs text-muted-foreground">
-                    当前：{candidate.status}
+                    {activeRound
+                      ? `请在下方「${activeRound === 1 ? "初试" : "复试"}」卡片给出通过 / 不通过结论`
+                      : `当前：${candidate.status}`}
                   </span>
                 </div>
               )}
@@ -409,6 +452,8 @@ export function CandidateDrawer({
                 round={1}
                 interview={interviewMap.get(1)}
                 readOnly={isTerminal}
+                active={activeRound === 1}
+                confirmFail={confirmInterviewFail}
                 operatorName={operatorName}
                 onOperatorChange={onOperatorChange}
                 interviewerNames={interviewerNames}
@@ -421,6 +466,8 @@ export function CandidateDrawer({
                 round={2}
                 interview={interviewMap.get(2)}
                 readOnly={isTerminal}
+                active={activeRound === 2}
+                confirmFail={confirmInterviewFail}
                 operatorName={operatorName}
                 onOperatorChange={onOperatorChange}
                 interviewerNames={interviewerNames}
@@ -472,19 +519,37 @@ export function CandidateDrawer({
         open={!!scheduleTarget}
         onClose={() => setScheduleTarget(null)}
         title={scheduleTarget?.round === 1 ? "安排初试时间" : "安排复试时间"}
-        description="可现在确认时间；若时间还需商议，也可先推进，稍后在看板或日程表补录"
+        description="确定后进入「面试日程表」，稍后可补录时间"
         className="max-w-sm"
       >
         <div className="space-y-4">
           <div>
-            <Label className="mb-1.5">
-              面试时间
-              <span className="ml-1.5 text-xs font-normal text-amber-600">
-                可暂定，稍后再确认
-              </span>
-            </Label>
+            <div className="mb-1.5 flex items-center justify-between">
+              <Label>面试时间</Label>
+              {scheduleTime ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScheduleTime("");
+                    setScheduleError(null);
+                  }}
+                  className="text-xs text-muted-foreground transition hover:text-amber-600"
+                >
+                  时间暂不确定
+                </button>
+              ) : (
+                <span className="text-xs font-medium text-amber-600">
+                  暂定中，可先推进
+                </span>
+              )}
+            </div>
             <div className="relative">
-              <CalendarClock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <CalendarClock
+                className={cn(
+                  "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2",
+                  scheduleTime ? "text-muted-foreground" : "text-amber-400"
+                )}
+              />
               <input
                 type="datetime-local"
                 value={scheduleTime}
@@ -492,7 +557,12 @@ export function CandidateDrawer({
                   setScheduleTime(e.target.value);
                   setScheduleError(null);
                 }}
-                className="flex h-10 w-full rounded-xl border border-input bg-white pl-9 pr-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                className={cn(
+                  "flex h-10 w-full rounded-xl border bg-white pl-9 pr-3 text-sm outline-none transition [&::-webkit-calendar-picker-indicator]:hidden focus:ring-2",
+                  scheduleTime
+                    ? "border-input focus:border-emerald-400 focus:ring-emerald-100"
+                    : "border-dashed border-amber-300 bg-amber-50/50 text-amber-700 focus:border-amber-400 focus:ring-amber-100"
+                )}
               />
             </div>
             {scheduleError && (
@@ -500,12 +570,10 @@ export function CandidateDrawer({
             )}
           </div>
           <div>
-            <Label className="mb-1.5">
-              面试官
-              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                可先不分配
-              </span>
-            </Label>
+            <div className="mb-1.5 flex items-center justify-between">
+              <Label>面试官</Label>
+              <span className="text-xs text-muted-foreground">可选</span>
+            </div>
             <div className="relative">
               <UserCog className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <select
@@ -530,29 +598,34 @@ export function CandidateDrawer({
               <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
           </div>
-          <div className="flex items-center justify-between gap-2">
+
+          <div className="flex gap-2 border-t border-slate-100 pt-3.5">
             <Button
               variant="outline"
-              loading={busy === scheduleTarget?.to}
-              onClick={confirmTentativeSchedule}
-              className="border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+              className="h-10 flex-1 rounded-xl"
+              disabled={busy === scheduleTarget?.to}
+              onClick={() => setScheduleTarget(null)}
             >
-              时间暂不确定，先推进
+              取消
             </Button>
-            <div className="flex gap-2">
+            {scheduleTime ? (
               <Button
-                variant="outline"
-                onClick={() => setScheduleTarget(null)}
-              >
-                取消
-              </Button>
-              <Button
+                className="h-10 flex-[2] rounded-xl"
                 onClick={confirmSchedule}
                 loading={busy === scheduleTarget?.to}
               >
                 确认排期并推进
               </Button>
-            </div>
+            ) : (
+              <Button
+                onClick={confirmTentativeSchedule}
+                loading={busy === scheduleTarget?.to}
+                className="h-10 flex-[2] rounded-xl bg-amber-600 text-white shadow-sm hover:bg-amber-700"
+              >
+                <CalendarClock className="h-4 w-4" />
+                时间暂不确定，先推进
+              </Button>
+            )}
           </div>
         </div>
       </Modal>
@@ -560,7 +633,7 @@ export function CandidateDrawer({
       {/* 通用二次确认弹窗 */}
       <Modal
         open={!!confirmDialog}
-        onClose={() => !deleting && !busy && setConfirmDialog(null)}
+        onClose={closeConfirm}
         title={confirmDialog?.title ?? ""}
         description={confirmDialog?.message}
         className="max-w-sm"
@@ -569,7 +642,7 @@ export function CandidateDrawer({
           <Button
             variant="outline"
             disabled={!!deleting || !!busy}
-            onClick={() => setConfirmDialog(null)}
+            onClick={closeConfirm}
           >
             取消
           </Button>
