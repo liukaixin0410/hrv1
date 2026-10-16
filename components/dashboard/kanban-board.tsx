@@ -11,12 +11,16 @@ interface KanbanBoardProps {
   onSelect: (candidate: Candidate) => void;
   /** 统计卡点击后需要高亮定位的列 key */
   highlightKey?: string | null;
+  operatorName: string;
+  onOperatorChange: (v: string) => void;
 }
 
 export function KanbanBoard({
   candidates,
   onSelect,
   highlightKey,
+  operatorName,
+  onOperatorChange,
 }: KanbanBoardProps) {
   if (candidates.length === 0) {
     return (
@@ -73,6 +77,8 @@ export function KanbanBoard({
                     key={candidate.id}
                     candidate={candidate}
                     onClick={() => onSelect(candidate)}
+                    operatorName={operatorName}
+                    onOperatorChange={onOperatorChange}
                   />
                 ))
               )}

@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CalendarClock,
   ChevronDown,
   Download,
   ExternalLink,
+  Eye,
   FileText,
   History,
   Trash2,
@@ -70,6 +71,8 @@ export function CandidateDrawer({
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // 简历预览是否展开（避免打开抽屉时 PDF 自动触发浏览器下载）
+  const [resumePreviewOpen, setResumePreviewOpen] = useState(false);
   // 通用二次确认弹窗（删除 / 面试通过 / 面试不通过 等危险操作）
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string;
@@ -86,6 +89,11 @@ export function CandidateDrawer({
   const [scheduleTime, setScheduleTime] = useState("");
   const [scheduleInterviewer, setScheduleInterviewer] = useState("");
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+
+  // 切换候选人时关闭预览，避免上一份 PDF 残留
+  useEffect(() => {
+    setResumePreviewOpen(false);
+  }, [candidate?.id]);
 
   const interviewMap = useMemo(() => {
     const map = new Map<number, NonNullable<Candidate["interviews"]>[number]>();
@@ -273,20 +281,34 @@ export function CandidateDrawer({
             <div className="space-y-3">
               {candidate.resume_url && (
                 <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white card-soft">
-                  {kind === "pdf" && (
-                    <iframe
-                      src={candidate.resume_url}
-                      title="简历预览"
-                      className="h-80 w-full bg-slate-50 md:h-[420px]"
-                    />
-                  )}
-                  {kind === "image" && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={candidate.resume_url}
-                      alt="简历图片"
-                      className="max-h-[420px] w-full object-contain bg-slate-50"
-                    />
+                  {/* 预览默认不加载，避免 PDF 自动触发浏览器下载 */}
+                  {resumePreviewOpen ? (
+                    kind === "pdf" ? (
+                      <iframe
+                        src={candidate.resume_url}
+                        title="简历预览"
+                        className="h-80 w-full bg-slate-50 md:h-[420px]"
+                      />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={candidate.resume_url}
+                        alt="简历图片"
+                        className="max-h-[420px] w-full object-contain bg-slate-50"
+                      />
+                    )
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setResumePreviewOpen(true)}
+                      className="flex h-48 w-full flex-col items-center justify-center gap-2 bg-slate-50 text-muted-foreground transition hover:bg-slate-100 hover:text-foreground md:h-[420px]"
+                    >
+                      <FileText className="h-8 w-8" />
+                      <span className="inline-flex items-center gap-1 text-sm font-medium">
+                        <Eye className="h-4 w-4" />
+                        点击预览简历
+                      </span>
+                    </button>
                   )}
                   <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-3.5 py-2.5">
                     <span className="truncate text-xs text-muted-foreground">

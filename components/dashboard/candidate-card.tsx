@@ -1,9 +1,19 @@
 "use client";
 
-import { CalendarClock, FileText, Paperclip } from "lucide-react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { CalendarClock, FileText, Paperclip, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { TERMINAL_STATUSES, statusBadgeClass } from "@/lib/constants";
-import { cn, formatDateTime } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Modal } from "@/components/ui/modal";
+import {
+  SCHEDULING_STATUSES,
+  statusBadgeClass,
+  TERMINAL_STATUSES,
+} from "@/lib/constants";
+import { cn, formatDateTime, toLocalInputValue } from "@/lib/utils";
+import { rescheduleInterviewAction } from "@/app/actions";
 import type { Candidate } from "@/lib/types";
 
 // 按姓氏分配头像渐变色（Boss风格彩色头像）
@@ -18,16 +28,39 @@ const AVATAR_GRADIENTS = [
 
 function avatarGradient(name: string) {
   let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < name.length; i++)
+    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
   return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length];
 }
 
 interface CandidateCardProps {
   candidate: Candidate;
   onClick: () => void;
+  operatorName: string;
+  onOperatorChange: (v: string) => void;
 }
 
-export function CandidateCard({ candidate, onClick }: CandidateCardProps) {
+export function CandidateCard({
+  candidate,
+  onClick,
+  operatorName,
+  onOperatorChange,
+}: CandidateCardProps) {
+  const router = useRouter();
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [rescheduleValue, setRescheduleValue] = useState("");
+  const [rescheduleSaving, setRescheduleSaving] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
+
+  const canReschedule = SCHEDULING_STATUSES.includes(
+    candidate.status as never
+  );
+  // 当前排期对应的轮次面试
+  const rescheduleRound: 1 | 2 = candidate.status === "复试排期" ? 2 : 1;
+  const rescheduleInterview = candidate.interviews?.find(
+    (i) => i.round === rescheduleRound
+  );
+
   const upcoming = candidate.interviews
     ?.filter((i) => i.scheduled_time)
     .sort(
@@ -45,79 +78,173 @@ export function CandidateCard({ candidate, onClick }: CandidateCardProps) {
     ? TERMINAL_STATUSES.includes(candidate.status)
     : false;
 
+  function openReschedule(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!canReschedule || !rescheduleInterview?.scheduled_time) return;
+    setRescheduleValue(toLocalInputValue(rescheduleInterview.scheduled_time));
+    setRescheduleError(null);
+    setRescheduleOpen(true);
+  }
+
+  async function confirmReschedule() {
+    if (!rescheduleValue) {
+      setRescheduleError("请选择新的面试时间");
+      return;
+    }
+    if (Number.isNaN(new Date(rescheduleValue).getTime())) {
+      setRescheduleError("面试时间格式不正确");
+      return;
+    }
+    setRescheduleSaving(true);
+    setRescheduleError(null);
+    const result = await rescheduleInterviewAction({
+      candidateId: candidate.id,
+      round: rescheduleRound,
+      scheduledTime: rescheduleValue,
+      operatorName,
+    });
+    setRescheduleSaving(false);
+    if (!result.ok) {
+      setRescheduleError(result.error ?? "改期失败");
+      return;
+    }
+    onOperatorChange(operatorName.trim());
+    setRescheduleOpen(false);
+    router.refresh();
+  }
+
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick();
-        }
-      }}
-      className="group w-full cursor-pointer rounded-xl border border-slate-100 bg-white p-3 text-left outline-none transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-lg hover:shadow-emerald-900/5 focus-visible:border-emerald-300 focus-visible:ring-2 focus-visible:ring-emerald-100"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-sm font-bold text-white shadow-sm ${avatarGradient(
-              candidate.name
-            )}`}
-          >
-            {candidate.name.slice(0, 1)}
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+        className="group w-full cursor-pointer rounded-xl border border-slate-100 bg-white p-3 text-left outline-none transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-lg hover:shadow-emerald-900/5 focus-visible:border-emerald-300 focus-visible:ring-2 focus-visible:ring-emerald-100"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-sm font-bold text-white shadow-sm ${avatarGradient(
+                candidate.name
+              )}`}
+            >
+              {candidate.name.slice(0, 1)}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-foreground">
+                {candidate.name}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {candidate.position?.title ?? "未分配岗位"}
+              </p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-foreground">
-              {candidate.name}
-            </p>
-            <p className="truncate text-xs text-muted-foreground">
-              {candidate.position?.title ?? "未分配岗位"}
-            </p>
-          </div>
+          <Badge className={statusBadgeClass(candidate.status)}>
+            {candidate.status}
+          </Badge>
         </div>
-        <Badge className={statusBadgeClass(candidate.status)}>
-          {candidate.status}
-        </Badge>
+
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+          {candidate.resume_url ? (
+            <a
+              href={candidate.resume_url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="点击打开简历附件"
+              className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-600"
+            >
+              <Paperclip className="h-3 w-3" />
+              简历附件
+            </a>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-400">
+              <FileText className="h-3 w-3" />
+              文本简历
+            </span>
+          )}
+          {upcoming && (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                overdue
+                  ? "bg-rose-50 text-rose-600"
+                  : historical
+                    ? "bg-slate-100 text-slate-500"
+                    : "bg-blue-50 text-blue-600"
+              )}
+              title={overdue ? "面试时间已过，请尽快跟进" : undefined}
+            >
+              <CalendarClock className="h-3 w-3" />
+              {formatDateTime(upcoming.scheduled_time)}
+              {overdue && <span className="font-semibold">· 已过期</span>}
+            </span>
+          )}
+          {canReschedule && rescheduleInterview && (
+            <button
+              type="button"
+              onClick={openReschedule}
+              title="修改面试时间"
+              aria-label={`修改${candidate.name}的面试时间`}
+              className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-600"
+            >
+              <Pencil className="h-3 w-3" />
+              改期
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-        {candidate.resume_url ? (
-          <a
-            href={candidate.resume_url}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            title="点击打开简历附件"
-            className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-600"
-          >
-            <Paperclip className="h-3 w-3" />
-            简历附件
-          </a>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-400">
-            <FileText className="h-3 w-3" />
-            文本简历
-          </span>
-        )}
-        {upcoming && (
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
-              overdue
-                ? "bg-rose-50 text-rose-600"
-                : historical
-                  ? "bg-slate-100 text-slate-500"
-                  : "bg-blue-50 text-blue-600"
+      <Modal
+        open={rescheduleOpen}
+        onClose={() => !rescheduleSaving && setRescheduleOpen(false)}
+        title={`修改${rescheduleRound === 1 ? "初试" : "复试"}时间`}
+        description={`${candidate.name} · ${
+          candidate.position?.title ?? "未知岗位"
+        }`}
+        className="max-w-sm"
+      >
+        <div className="space-y-4">
+          <div>
+            <Label className="mb-1.5">新的面试时间</Label>
+            <div className="relative">
+              <CalendarClock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="datetime-local"
+                value={rescheduleValue}
+                onChange={(e) => {
+                  setRescheduleValue(e.target.value);
+                  setRescheduleError(null);
+                }}
+                className="flex h-10 w-full rounded-xl border border-input bg-white pl-9 pr-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              />
+            </div>
+            {rescheduleError && (
+              <p className="mt-1.5 text-xs text-destructive">
+                {rescheduleError}
+              </p>
             )}
-            title={overdue ? "面试时间已过，请尽快跟进" : undefined}
-          >
-            <CalendarClock className="h-3 w-3" />
-            {formatDateTime(upcoming.scheduled_time)}
-            {overdue && <span className="font-semibold">· 已过期</span>}
-          </span>
-        )}
-      </div>
-    </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              disabled={rescheduleSaving}
+              onClick={() => setRescheduleOpen(false)}
+            >
+              取消
+            </Button>
+            <Button onClick={confirmReschedule} loading={rescheduleSaving}>
+              确认修改
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }

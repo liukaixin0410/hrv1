@@ -280,6 +280,8 @@ export function Workbench({
             candidates={filtered}
             onSelect={(c) => setSelectedId(c.id)}
             highlightKey={highlightKey}
+            operatorName={operatorName}
+            onOperatorChange={setOperatorName}
           />
         </>
       ) : (

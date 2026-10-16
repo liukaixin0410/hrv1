@@ -86,6 +86,12 @@ export function nextStatus(status: CandidateStatus): {
 
 export const TERMINAL_STATUSES: CandidateStatus[] = ["面试不通过", "面试通过"];
 
+/** 仍处于“待进行面试”的状态（可改期） */
+export const SCHEDULING_STATUSES: CandidateStatus[] = [
+  "初试排期",
+  "复试排期",
+];
+
 export const ROUND_LABEL: Record<1 | 2, string> = {
   1: "初试",
   2: "复试",
